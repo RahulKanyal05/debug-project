@@ -1,0 +1,37 @@
+.orbit-loader-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 15, 15, 0.4); /* reduced opacity */
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .orbit-loader {
+    position: relative;
+    width: 100px;
+    height: 100px;
+  }
+  
+  .orbit-center {
+    width: 20px;
+    height: 20px;
+    background: #00fff7;
+    border-radius: 50%;
+    position: absolute;
+    top: 40px;
+    left: 40px;
+    z-index: 2;
+    box-shadow: 0 0 15px #00fff7;
+  }
+  
+  .orbit-ring {
+    position: absolute;
+    width: 100px;
+    height: 100px;
+    border: 2px dashed #00fff7;
+    border-radius: 50%;
+    box-shadow: 0 0 20px #00fff7;
+  }
+  

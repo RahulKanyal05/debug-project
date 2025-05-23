@@ -1,0 +1,1496 @@
+// cart.tsx
+'use client';
+import { useState, useEffect, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Head from "next/head";
+import { getAuth, onAuthStateChanged } from "firebase/auth";
+import Script from "next/script";
+
+// Define types for our cart components
+type CartItem = {
+  name: string;
+  price: string;
+  period: string;
+  description: string;
+};
+
+type Coupon = {
+  code: string;
+  discount: number;
+  isValid: boolean;
+};
+
+// Define Razorpay interface
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
+
+export default function Cart() {
+  // Router and search params
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const planParam = searchParams?.get('plan');
+
+  // State management
+  const [cartItem, setCartItem] = useState<CartItem | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string | null>(null);
+  const [coupon, setCoupon] = useState<Coupon>({ code: "", discount: 0, isValid: false });
+  const [couponInput, setCouponInput] = useState("");
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState("");
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [scrollY, setScrollY] = useState(0);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
+  const [showErrorToast, setShowErrorToast] = useState(false);
+
+  // Refs for animations
+  const cartRef = useRef<HTMLDivElement>(null);
+  const summaryRef = useRef<HTMLDivElement>(null);
+  const proceedBtnRef = useRef<HTMLButtonElement>(null);
+  
+  // Animation state
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  
+  // Effect for handling scroll animations
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrollY(window.scrollY);
+    };
+    
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+  
+  // Effect for mouse tracking
+  useEffect(() => {
+    function handleMouseMove(e: MouseEvent) {
+      setMousePosition({
+        x: e.clientX / window.innerWidth,
+        y: e.clientY / window.innerHeight,
+      });
+    }
+
+    document.addEventListener("mousemove", handleMouseMove);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+    };
+  }, []);
+
+  // Effect for particle animations
+  useEffect(() => {
+    createParticles();
+  }, []);
+
+  // Create floating particles for background
+  const createParticles = () => {
+    const particlesContainer = document.getElementById("particles");
+    if (!particlesContainer) return;
+    
+    const particleCount = 30;
+    
+    for (let i = 0; i < particleCount; i++) {
+      const particle = document.createElement("div");
+      particle.classList.add("particle");
+      
+      // Random position
+      particle.style.left = `${Math.random() * 100}%`;
+      particle.style.top = `${Math.random() * 100}%`;
+      
+      // Random size
+      const size = Math.random() * 5 + 1;
+      particle.style.width = `${size}px`;
+      particle.style.height = `${size}px`;
+      
+      // Random animation duration and delay
+      const duration = Math.random() * 20 + 10;
+      const delay = Math.random() * 10;
+      particle.style.animation = `float ${duration}s ${delay}s infinite linear`;
+      
+      particlesContainer.appendChild(particle);
+    }
+  };
+
+  // Effect for hover animations on cart elements
+  useEffect(() => {
+    const elements = [cartRef.current, summaryRef.current];
+    
+    elements.forEach((el) => {
+      if (!el) return;
+      
+      el.addEventListener("mousemove", (e) => {
+        const rect = el.getBoundingClientRect();
+        const x = (e as MouseEvent).clientX - rect.left;
+        const y = (e as MouseEvent).clientY - rect.top;
+        
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        
+        const angleX = (y - centerY) / 30;
+        const angleY = (centerX - x) / 30;
+        
+        el.style.transform = `perspective(1000px) rotateX(${angleX}deg) rotateY(${angleY}deg) scale(1.01)`;
+      });
+      
+      el.addEventListener("mouseleave", () => {
+        el.style.transform = "";
+        setTimeout(() => {
+          el.style.transform = "rotateY(0) rotateX(0) scale(1)";
+        }, 100);
+      });
+    });
+
+    // Special effect for the proceed button
+    if (proceedBtnRef.current) {
+      proceedBtnRef.current.addEventListener("mousemove", (e) => {
+        const rect = proceedBtnRef.current!.getBoundingClientRect();
+        const x = (e as MouseEvent).clientX - rect.left;
+        const y = (e as MouseEvent).clientY - rect.top;
+        
+        // Update the gradient position
+        proceedBtnRef.current!.style.setProperty('--x', `${x}px`);
+        proceedBtnRef.current!.style.setProperty('--y', `${y}px`);
+      });
+    }
+  }, [cartItem]);
+
+  // Firebase auth state
+  useEffect(() => {
+    const auth = getAuth();
+    
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setUserEmail(user.email);
+        setUserName(user.displayName);
+      } else {
+        setUserEmail(null);
+        setUserName(null);
+      }
+    });
+    
+    return () => unsubscribe();
+  }, []);
+
+  // Get pricing plan based on URL param
+  useEffect(() => {
+    if (planParam) {
+      // Simulating API call to get plan details
+      setTimeout(() => {
+        const plans = {
+          essential: {
+            name: "Essential",
+            price: "29",
+            period: "/project",
+            description: "Foundation for emerging brands seeking professional design excellence"
+          },
+          professional: {
+            name: "Professional",
+            price: "750000",
+            period: "/project",
+            description: "Comprehensive design solution for established businesses ready to elevate"
+          },
+          enterprise: {
+            name: "Enterprise",
+            price: "1500000",
+            period: "/project",
+            description: "Bespoke design partnership for industry leaders demanding excellence"
+          }
+        };
+        
+        const selectedPlan = plans[planParam as keyof typeof plans];
+        
+        if (selectedPlan) {
+          setCartItem(selectedPlan);
+          // Animate in the item
+          setTimeout(() => {
+            const cartItemEl = document.querySelector('.cart-item');
+            if (cartItemEl) {
+              cartItemEl.classList.add('animate-in');
+            }
+          }, 300);
+        }
+        
+        setLoading(false);
+      }, 1200);
+    } else {
+      setLoading(false);
+    }
+  }, [planParam]);
+
+  // Apply coupon handler
+  const applyCoupon = () => {
+    if (!couponInput.trim()) {
+      setCouponError("Please enter a coupon code");
+      return;
+    }
+    
+    setCouponLoading(true);
+    setCouponError("");
+    
+    // Simulate API validation
+    setTimeout(() => {
+      const validCoupons = {
+        "NEW2025": 10,
+        "PREMIUM50": 50,
+        "MASTERCRAFT25": 25
+      };
+      
+      const discountAmount = validCoupons[couponInput.toUpperCase() as keyof typeof validCoupons];
+      
+      if (discountAmount) {
+        setCoupon({
+          code: couponInput.toUpperCase(),
+          discount: discountAmount,
+          isValid: true
+        });
+        setCouponInput("");
+        setShowSuccessToast(true);
+        setTimeout(() => setShowSuccessToast(false), 3000);
+      } else {
+        setCouponError("Invalid coupon code");
+      }
+      
+      setCouponLoading(false);
+    }, 1500);
+  };
+
+  // Calculate final price
+  const calculateFinalPrice = () => {
+    if (!cartItem) return { original: "0", discounted: "0", savings: "0", numeric: 0 };
+    
+    // Remove commas and convert to number
+    const price = parseFloat(cartItem.price.replace(/,/g, ""));
+    
+    // Calculate discount
+    const discountAmount = price * (coupon.discount / 100);
+    const finalPrice = price - discountAmount;
+    
+    // Format back with commas for display
+    return {
+      original: price.toLocaleString(),
+      discounted: finalPrice.toLocaleString(),
+      savings: discountAmount.toLocaleString(),
+      numeric: finalPrice // Raw number for calculations
+    };
+  };
+
+  // Handle Razorpay payment
+  const handleProceedToPayment = async () => {
+    try {
+      setIsProcessing(true);
+      setPaymentError("");
+      
+      if (!cartItem || !userEmail) {
+        throw new Error("Missing cart item or user information");
+      }
+      
+      const priceData = calculateFinalPrice();
+      
+      // Create Razorpay order
+      const orderResponse = await fetch('/api/create-razorpay-order', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: priceData.numeric,
+          currency: 'INR',
+          receipt: `receipt_${Date.now()}`,
+          notes: {
+            plan: cartItem.name,
+            email: userEmail,
+            coupon: coupon.isValid ? coupon.code : 'NONE'
+          }
+        }),
+      });
+      
+      if (!orderResponse.ok) {
+        throw new Error("Failed to create payment order");
+      }
+      
+      const orderData = await orderResponse.json();
+      
+      // Initialize Razorpay
+      const options = {
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        amount: orderData.amount, // amount in paise
+        currency: orderData.currency,
+        name: "Mastercraft Design",
+        description: `Payment for ${cartItem.name} Plan`,
+        order_id: orderData.id,
+        prefill: {
+          name: userName || '',
+          email: userEmail,
+        },
+        theme: {
+          color: "#CAC5FE",
+        },
+        modal: {
+          backdropclose: false,
+          escape: false,
+          handleback: true,
+          confirm_close: true,
+        },
+        handler: async function (response: any) {
+          try {
+            // Verify payment
+            const verificationResponse = await fetch('/api/verify-payment', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              }),
+            });
+            
+            if (!verificationResponse.ok) {
+              throw new Error("Payment verification failed");
+            }
+            
+            // Save payment details to session storage for the summary page
+            const paymentDetails = {
+              paymentId: response.razorpay_payment_id,
+              orderId: response.razorpay_order_id,
+              signature: response.razorpay_signature,
+              amount: priceData.numeric,
+              formattedAmount: priceData.numeric.toLocaleString(),
+              currency: orderData.currency,
+              plan: cartItem.name,
+              email: userEmail,
+              timestamp: new Date().toISOString(),
+              couponApplied: coupon.isValid ? coupon.code : null,
+              discountPercentage: coupon.isValid ? coupon.discount : 0,
+            };
+            
+            sessionStorage.setItem('paymentDetails', JSON.stringify(paymentDetails));
+            
+            // Redirect to success page
+            router.push('/payment-summary');
+          } catch (error) {
+            console.error("Payment verification error:", error);
+            showError("Payment verification failed. Please contact support.");
+          }
+        },
+        modal: {
+          ondismiss: function() {
+            setIsProcessing(false);
+          }
+        }
+      };
+      
+      // Initialize and open Razorpay
+      const razorpay = new window.Razorpay(options);
+      razorpay.open();
+      
+      // Handle Razorpay errors
+      razorpay.on('payment.failed', function (response: any) {
+        showError(`Payment failed: ${response.error.description}`);
+        setIsProcessing(false);
+      });
+      
+    } catch (error) {
+      console.error("Payment error:", error);
+      showError("Unable to process payment. Please try again later.");
+      setIsProcessing(false);
+    }
+  };
+
+  // Show error message
+  const showError = (message: string) => {
+    setPaymentError(message);
+    setShowErrorToast(true);
+    setTimeout(() => setShowErrorToast(false), 5000);
+  };
+
+  // Remove coupon handler
+  const removeCoupon = () => {
+    setCoupon({ code: "", discount: 0, isValid: false });
+  };
+
+  // Get price calculations
+  const priceData = calculateFinalPrice();
+
+  return (
+    <>
+      <Head>
+        <title>Your Cart | Mastercraft Design</title>
+        <meta name="description" content="Complete your premium design service purchase" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      </Head>
+
+      {/* Razorpay script */}
+      <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
+
+      <div id="particles" className="particles"></div>
+      
+      <div className="hero-bg">
+        <div 
+          className="hero-blob blob-1" 
+          style={{ 
+            transform: `translate(${mousePosition.x * 50}px, ${mousePosition.y * 50}px)` 
+          }}
+        ></div>
+        <div 
+          className="hero-blob blob-2" 
+          style={{ 
+            transform: `translate(${-mousePosition.x * 50}px, ${-mousePosition.y * 50}px)` 
+          }}
+        ></div>
+      </div>
+      
+      <div className="container">
+        <header>
+          <nav>
+            <div className="logo">MASTERCRAFT</div>
+            <div className="nav-links">
+              <button className="back-btn" onClick={() => router.push("/")}>
+                <span className="back-arrow">←</span> Back to Services
+              </button>
+            </div>
+          </nav>
+        </header>
+
+        <main className="cart-page">
+          <div className="cart-header animate-fadeIn">
+            <h1>Complete Your Order</h1>
+            <div className="cart-subtitle">
+              <span className="highlight-text">Secure Checkout</span>
+              <span className="secure-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M19 11H5V21H19V11Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M17 9V7C17 4.23858 14.7614 2 12 2C9.23858 2 7 4.23858 7 7V9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </span>
+            </div>
+          </div>
+
+          <div className="cart-layout">
+            {/* Cart Items Section */}
+            <div 
+              className="cart-items-section" 
+              ref={cartRef}
+              style={{
+                transform: `translateY(${scrollY * 0.05}px)`
+              }}
+            >
+              <div className="cart-section-header">
+                <h2>Your Selection</h2>
+                {userEmail && (
+                  <div className="user-info">
+                    <div className="user-info-icon">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M20 21V19C20 16.7909 18.2091 15 16 15H8C5.79086 15 4 16.7909 4 19V21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M12 11C14.2091 11 16 9.20914 16 7C16 4.79086 14.2091 3 12 3C9.79086 3 8 4.79086 8 7C8 9.20914 9.79086 11 12 11Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </div>
+                    <span>{userEmail}</span>
+                  </div>
+                )}
+              </div>
+
+              {loading ? (
+                <div className="loading-state">
+                  <div className="spinner"></div>
+                  <p>Loading your selection...</p>
+                </div>
+              ) : (
+                <>
+                  {cartItem ? (
+                    <div className="cart-item">
+                      <div className="item-header">
+                        <div className="item-plan">
+                          <h3>{cartItem.name}</h3>
+                          <span className="plan-period">{cartItem.period}</span>
+                        </div>
+                        <div className="item-price">₹{cartItem.price.replace(/(\d)(?=(\d\d)+\d$)/g, "$1,")}</div>
+                      </div>
+                      <p className="item-description">{cartItem.description}</p>
+                      <div className="item-footer">
+                        <div className="item-quality">
+                          <span className="quality-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </span>
+                          <span>Premium Quality</span>
+                        </div>
+                        <div className="item-delivery">
+                          <span className="delivery-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M22 12H2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              <path d="M12 2V22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              <path d="M17 3L12 12L17 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              <path d="M7 3L12 12L7 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </span>
+                          <span>Priority Delivery</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="empty-cart">
+                      <div className="empty-icon">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M3 3H5L5.4 5M5.4 5H21L17 13H7M5.4 5L7 13M7 13L5.2 15H17M9 19C9 19.5523 8.55228 20 8 20C7.44772 20 7 19.5523 7 19C7 18.4477 7.44772 18 8 18C8.55228 18 9 18.4477 9 19ZM17 19C17 19.5523 16.5523 20 16 20C15.4477 20 15 19.5523 15 19C15 18.4477 15.4477 18 16 18C16.5523 18 17 18.4477 17 19Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </div>
+                      <h3>Your cart is empty</h3>
+                      <p>Browse our premium design services and select a plan to get started.</p>
+                      <button 
+                        className="btn btn-primary empty-cart-btn"
+                        onClick={() => router.push("/")}
+                      >
+                        View Services
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {cartItem && (
+                <div className="coupon-section">
+                  <h3>Have a coupon?</h3>
+                  {coupon.isValid ? (
+                    <div className="applied-coupon">
+                      <div className="coupon-info">
+                        <div className="coupon-tag">
+                          <span className="coupon-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M9 11L12 14L22 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              <path d="M21 12V19C21 20.1046 20.1046 21 19 21H5C3.89543 21 3 20.1046 3 19V5C3 3.89543 3.89543 3 5 3H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </span>
+                          <span className="coupon-code">{coupon.code}</span>
+                        </div>
+                        <span className="discount-text">{coupon.discount}% OFF</span>
+                      </div>
+                      <button className="remove-coupon" onClick={removeCoupon}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          <path d="M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="coupon-input-group">
+                      <div className="input-wrapper">
+                        <input 
+                          type="text" 
+                          placeholder="Enter coupon code" 
+                          value={couponInput} 
+                          onChange={(e) => setCouponInput(e.target.value)}
+                          disabled={couponLoading}
+                        />
+                        {couponError && (
+                          <p className="coupon-error">{couponError}</p>
+                        )}
+                      </div>
+                      <button 
+                        className={`btn apply-coupon ${couponLoading ? 'loading' : ''}`}
+                        onClick={applyCoupon}
+                        disabled={couponLoading}
+                      >
+                        {couponLoading ? (
+                          <div className="btn-spinner"></div>
+                        ) : "Apply"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Order Summary Section */}
+            {cartItem && (
+              <div 
+                className="order-summary" 
+                ref={summaryRef}
+                style={{
+                  transform: `translateY(${scrollY * -0.05}px)`
+                }}
+              >
+                <h2>Order Summary</h2>
+                
+                <div className="summary-item">
+                  <span>Subtotal</span>
+                  <span>₹{priceData.original}</span>
+                </div>
+                
+                {coupon.isValid && (
+                  <div className="summary-item discount">
+                    <span>Discount ({coupon.discount}%)</span>
+                    <span>-₹{priceData.savings}</span>
+                  </div>
+                )}
+                
+                <div className="summary-item tax">
+                  <span>GST (18%)</span>
+                  <span>Included</span>
+                </div>
+                
+                <div className="summary-total">
+                  <span>Total</span>
+                  <span>₹{priceData.discounted}</span>
+                </div>
+                
+                <button 
+                  className={`btn btn-primary checkout-btn ${isProcessing ? 'processing' : ''}`}
+                  onClick={handleProceedToPayment}
+                  disabled={isProcessing || !userEmail}
+                  ref={proceedBtnRef}
+                >
+                  {isProcessing ? (
+                    <>
+                      <div className="btn-spinner"></div>
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="btn-text">Proceed to Payment</span>
+                      <span className="btn-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          <path d="M12 5L19 12L12 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </span>
+                    </>
+                  )}
+                </button>
+                
+                {!userEmail && (
+                  <div className="login-prompt">
+                    <p>Please <button onClick={() => router.push('/login?redirect=cart')} className="text-btn">log in</button> to complete your purchase</p>
+                  </div>
+                )}
+                
+                <div className="payment-security">
+                  <div className="security-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M12 22C12 22 20 18 20 12V5L12 2L4 5V12C4 18 12 22 12 22Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M9 12L11 14L15 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                  <div className="security-text">
+                    <p>Secure Payment</p>
+                    <span>Your payment information is encrypted</span>
+                  </div>
+                </div>
+                
+                <div className="payment-methods">
+                  <div className="method-icon visa"></div>
+                  <div className="method-icon mastercard"></div>
+                  <div className="method-icon amex"></div>
+                  <div className="method-icon upi"></div>
+                  <div className="method-icon netbanking"></div>
+                </div>
+              </div>
+            )}
+          </div>
+        </main>
+
+        <footer className="cart-footer">
+          <div className="footer-content">
+            <p>© 2025 Mastercraft Design. All rights reserved.</p>
+            <div className="footer-links">
+              <a href="/privacy">Privacy Policy</a>
+              <a href="/terms">Terms of Service</a>
+              <a href="/support">Support</a>
+            </div>
+          </div>
+        </footer>
+      </div>
+
+      {/* Success Toast */}
+      <div className={`toast success-toast ${showSuccessToast ? 'show' : ''}`}>
+        <div className="toast-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M22 11.08V12C21.9988 14.1564 21.3005 16.2547 20.0093 17.9818C18.7182 19.709 16.9033 20.9725 14.8354 21.5839C12.7674 22.1953 10.5573 22.1219 8.53447 21.3746C6.51168 20.6273 4.78465 19.2461 3.61096 17.4371C2.43727 15.628 1.87979 13.4881 2.02168 11.3363C2.16356 9.18455 2.99721 7.13631 4.39828 5.49706C5.79935 3.85781 7.69279 2.71537 9.79619 2.24013C11.8996 1.7649 14.1003 1.98232 16.07 2.85999" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M22 4L12 14.01L9 11.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+        <div className="toast-content">
+          <p>Coupon applied successfully!</p>
+          <p className="toast-detail">You saved ₹{priceData.savings}</p>
+        </div>
+      </div>
+
+      {/* Error Toast */}
+      <div className={`toast error-toast ${showErrorToast ? 'show' : ''}`}>
+        <div className="toast-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 8V12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M12 16H12.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+        <div className="toast-content">
+          <p>Payment Error</p>
+          <p className="toast-detail">{paymentError}</p>
+        </div>
+      </div>
+
+      <style jsx>{`
+        /* Global Styles */
+        .container {
+          max-width: 1200px;
+          margin: 0 auto;
+          padding: 0 20px;
+          position: relative;
+          z-index: 1;
+        }
+
+        /* Background Effects */
+        .particles {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+          z-index: 0;
+        }
+        
+        .particle {
+          position: absolute;
+          background-color: rgba(202, 197, 254, 0.3);
+          border-radius: 50%;
+          pointer-events: none;
+        }
+        
+        @keyframes float {
+          0% {
+            transform: translateY(0) translateX(0);
+          }
+          25% {
+            transform: translateY(-20px) translateX(10px);
+          }
+          50% {
+            transform: translateY(0) translateX(20px);
+          }
+          75% {
+            transform: translateY(20px) translateX(10px);
+          }
+          100% {
+            transform: translateY(0) translateX(0);
+          }
+        }
+        
+        .hero-bg {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+          z-index: 0;
+          overflow: hidden;
+        }
+        
+        .hero-blob {
+          position: absolute;
+          border-radius: 50%;
+          filter: blur(80px);
+          opacity: 0.5;
+          transition: transform 0.8s ease-out;
+        }
+        
+        .blob-1 {
+          top: -15%;
+          right: -10%;
+          width: 50vw;
+          height: 50vw;
+          background: linear-gradient(135deg, rgba(153, 121, 251, 0.3), rgba(202, 197, 254, 0.3));
+        }
+        
+        .blob-2 {
+          bottom: -15%;
+          left: -10%;
+          width: 60vw;
+          height: 60vw;
+          background: linear-gradient(135deg, rgba(202, 197, 254, 0.3), rgba(153, 121, 251, 0.2));
+        }
+
+        /* Navigation */
+        nav {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 24px 0;
+        }
+        
+        .logo {
+          font-weight: 700;
+          font-size: 1.25rem;
+          letter-spacing: 2px;
+          color: var(--text-primary);
+        }
+        
+        .back-btn {
+          background: none;
+          border: none;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 0.875rem;
+          color: var(--text-secondary);
+          cursor: pointer;
+          transition: color 0.3s ease;
+        }
+        
+        .back-btn:hover {
+          color: var(--text-primary);
+        }
+        
+        .back-arrow {
+          margin-right: 4px;
+        }
+
+        /* Cart Page */
+        .cart-page {
+          padding: 20px 0 60px;
+          min-height: calc(100vh - 200px);
+        }
+        
+        .cart-header {
+          text-align: center;
+          margin-bottom: 48px;
+        }
+        
+        .cart-header h1 {
+          font-size: 2.5rem;
+          font-weight: 700;
+          margin-bottom: 16px;
+          background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+        
+        .cart-subtitle {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          gap: 8px;
+          font-size: 1rem;
+          color: var(--text-secondary);
+        }
+        
+        .highlight-text {
+          color: var(--accent-color);
+          font-weight: 600;
+        }
+        
+        .secure-icon {
+          display: flex;
+          align-items: center;
+          color: var(--accent-color);
+        }
+
+        /* Cart Layout */
+        .cart-layout {
+          display: grid;
+          grid-template-columns: 1fr 380px;
+          gap: 32px;
+        }
+        
+        @media (max-width: 900px) {
+          .cart-layout {
+            grid-template-columns: 1fr;
+          }
+          
+          .order-summary {
+            grid-row: 1;
+            margin-bottom: 32px;
+          }
+        }
+
+        /* Cart Items Section */
+        .cart-items-section {
+          background: rgba(255, 255, 255, 0.8);
+          backdrop-filter: blur(10px);
+          border-radius: 16px;
+          padding: 24px;
+          box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+          transition: transform 0.6s cubic-bezier(0.165, 0.84, 0.44, 1), box-shadow 0.6s ease;
+        }
+        
+        .cart-items-section:hover {
+          box-shadow: 0 15px 60px rgba(153, 121, 251, 0.15);
+        }
+        
+        .cart-section-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 24px;
+          padding-bottom: 16px;
+          border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        }
+        
+        .cart-section-header h2 {
+          font-size: 1.25rem;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+        
+        .user-info {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 0.875rem;
+          color: var(--text-secondary);
+        }
+        
+        .user-info-icon {
+          display: flex;
+          align-items: center;
+          color: var(--text-secondary);
+        }
+
+        /* Loading State */
+        .loading-state {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 48px 0;
+        }
+        
+        .spinner {
+          width: 32px;
+          height: 32px;
+          border: 3px solid rgba(153, 121, 251, 0.2);
+          border-top-color: var(--primary-color);
+          border-radius: 50%;
+          animation: spin 1s infinite linear;
+          margin-bottom: 16px;
+        }
+        
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+        
+        .loading-state p {
+          font-size: 0.875rem;
+          color: var(--text-secondary);
+        }
+
+        /* Cart Item */
+        .cart-item {
+          background: rgba(255, 255, 255, 0.6);
+          border-radius: 12px;
+          padding: 24px;
+          margin-bottom: 24px;
+          transition: transform 0.3s ease, opacity 0.3s ease;
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        
+        .cart-item.animate-in {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        
+        .item-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          margin-bottom: 16px;
+        }
+        
+        .item-plan h3 {
+          font-size: 1.25rem;
+          font-weight: 600;
+          margin-bottom: 4px;
+        }
+        
+        .plan-period {
+          font-size: 0.875rem;
+          color: var(--text-tertiary);
+        }
+        
+        .item-price {
+          font-size: 1.5rem;
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+        
+        .item-description {
+          font-size: 0.9375rem;
+          color: var(--text-secondary);
+          margin-bottom: 24px;
+          line-height: 1.6;
+        }
+        
+        .item-footer {
+          display: flex;
+          gap: 24px;
+        }
+        
+        .item-quality, .item-delivery {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 0.875rem;
+          color: var(--text-secondary);
+        }
+        
+        .quality-icon, .delivery-icon {
+          display: flex;
+          align-items: center;
+          color: var(--accent-color);
+        }
+
+        /* Empty Cart */
+        .empty-cart {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          text-align: center;
+          padding: 48px 0;
+        }
+        
+        .empty-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 80px;
+          height: 80px;
+          background: rgba(153, 121, 251, 0.1);
+          border-radius: 50%;
+          margin-bottom: 24px;
+          color: var(--primary-color);
+        }
+        
+        .empty-cart h3 {
+          font-size: 1.25rem;
+          font-weight: 600;
+          margin-bottom: 12px;
+        }
+        
+        .empty-cart p {
+          font-size: 0.9375rem;
+          color: var(--text-secondary);
+          margin-bottom: 24px;
+          max-width: 320px;
+        }
+        
+        .empty-cart-btn {
+          min-width: 160px;
+        }
+
+        /* Coupon Section */
+        .coupon-section {
+          margin-top: 32px;
+          padding-top: 24px;
+          border-top: 1px solid rgba(0, 0, 0, 0.05);
+        }
+        
+        .coupon-section h3 {
+          font-size: 1rem;
+          font-weight: 600;
+          margin-bottom: 16px;
+        }
+        
+        .coupon-input-group {
+          display: flex;
+          gap: 12px;
+        }
+        
+        .input-wrapper {
+          flex: 1;
+          position: relative;
+        }
+        
+        .input-wrapper input {
+          width: 100%;
+          padding: 12px 16px;
+          border: 1px solid rgba(0, 0, 0, 0.1);
+          border-radius: 8px;
+          font-size: 0.9375rem;
+          transition: border-color 0.3s ease;
+        }
+        
+        .input-wrapper input:focus {
+          outline: none;
+          border-color: var(--primary-color);
+        }
+        
+        .coupon-error {
+          position: absolute;
+          font-size: 0.75rem;
+          color: var(--error-color);
+          margin-top: 4px;
+        }
+        
+        .apply-coupon {
+          min-width: 80px;
+          height: 44px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        
+        .apply-coupon.loading {
+          cursor: not-allowed;
+          opacity: 0.7;
+        }
+        
+        .btn-spinner {
+          width: 18px;
+          height: 18px;
+          border: 2px solid rgba(255, 255, 255, 0.3);
+          border-top-color: white;
+          border-radius: 50%;
+          animation: spin 1s infinite linear;
+        }
+        
+        .applied-coupon {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: rgba(153, 121, 251, 0.08);
+          border-radius: 8px;
+          padding: 12px 16px;
+        }
+        
+        .coupon-info {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        
+        .coupon-tag {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.875rem;
+          font-weight: 600;
+          color: var(--primary-color);
+        }
+        
+        .coupon-icon {
+          display: flex;
+          align-items: center;
+          color: var(--primary-color);
+        }
+        
+        .discount-text {
+          font-size: 0.875rem;
+          font-weight: 600;
+          color: var(--primary-color);
+        }
+        
+        .remove-coupon {
+          background: none;
+          border: none;
+          color: var(--text-tertiary);
+          cursor: pointer;
+          padding: 6px;
+        }
+        
+        .remove-coupon:hover {
+          color: var(--text-secondary);
+        }
+
+        /* Order Summary */
+        .order-summary {
+          background: rgba(255, 255, 255, 0.8);
+          backdrop-filter: blur(10px);
+          border-radius: 16px;
+          padding: 24px;
+          box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+          transition: transform 0.6s cubic-bezier(0.165, 0.84, 0.44, 1), box-shadow 0.6s ease;
+        }
+        
+        .order-summary:hover {
+          box-shadow: 0 15px 60px rgba(153, 121, 251, 0.15);
+        }
+        
+        .order-summary h2 {
+          font-size: 1.25rem;
+          font-weight: 600;
+          margin-bottom: 24px;
+          padding-bottom: 16px;
+          border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        }
+        
+        .summary-item {
+          display: flex;
+          justify-content: space-between;
+          margin-bottom: 16px;
+          font-size: 0.9375rem;
+        }
+        
+        .summary-item.discount {
+          color: var(--primary-color);
+        }
+        
+        .summary-item.tax {
+          color: var(--text-tertiary);
+          padding-bottom: 16px;
+          border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        }
+        
+        .summary-total {
+          display: flex;
+          justify-content: space-between;
+          margin: 16px 0 24px;
+          font-size: 1.125rem;
+          font-weight: 600;
+        }
+        
+        .checkout-btn {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          gap: 8px;
+          width: 100%;
+          padding: 14px;
+          margin-bottom: 24px;
+          position: relative;
+          overflow: hidden;
+          --x: 0px;
+          --y: 0px;
+        }
+        
+        .checkout-btn::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: radial-gradient(
+            circle at var(--x) var(--y),
+            rgba(255, 255, 255, 0.8),
+            transparent 40%
+          );
+          opacity: 0;
+          transition: opacity 0.3s;
+        }
+        
+        .checkout-btn:hover::before {
+          opacity: 1;
+        }
+        
+        .checkout-btn.processing {
+          cursor: not-allowed;
+        }
+        
+        .btn-icon {
+          display: flex;
+          align-items: center;
+        }
+        
+        .login-prompt {
+          text-align: center;
+          margin-bottom: 24px;
+          font-size: 0.875rem;
+          color: var(--text-secondary);
+        }
+        
+        .text-btn {
+          background: none;
+          border: none;
+          color: var(--primary-color);
+          font-weight: 600;
+          cursor: pointer;
+          padding: 0;
+        }
+        
+        .payment-security {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          padding: 16px;
+          background: rgba(153, 121, 251, 0.08);
+          border-radius: 8px;
+          margin-bottom: 24px;
+        }
+        
+        .security-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 40px;
+          height: 40px;
+          background: rgba(153, 121, 251, 0.2);
+          border-radius: 50%;
+          color: var(--primary-color);
+        }
+        
+        .security-text p {
+          font-size: 0.9375rem;
+          font-weight: 600;
+          margin-bottom: 4px;
+        }
+        
+        .security-text span {
+          font-size: 0.8125rem;
+          color: var(--text-secondary);
+        }
+        
+        .payment-methods {
+          display: flex;
+          gap: 12px;
+          justify-content: center;
+        }
+        
+        .method-icon {
+          width: 40px;
+          height: 26px;
+          background-color: #f1f1f1;
+          border-radius: 4px;
+        }
+
+        /* Footer */
+        .cart-footer {
+          padding: 32px 0;
+          border-top: 1px solid rgba(0, 0, 0, 0.05);
+        }
+        
+        .footer-content {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          font-size: 0.875rem;
+          color: var(--text-tertiary);
+        }
+        
+        .footer-links {
+          display: flex;
+          gap: 24px;
+        }
+        
+        .footer-links a {
+          color: var(--text-tertiary);
+          text-decoration: none;
+          transition: color 0.3s ease;
+        }
+        
+        .footer-links a:hover {
+          color: var(--text-secondary);
+        }
+
+        /* Toast Notifications */
+        .toast {
+          position: fixed;
+          bottom: 32px;
+          right: 32px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          background: white;
+          border-radius: 8px;
+          padding: 16px;
+          box-shadow: 0 5px 30px rgba(0, 0, 0, 0.15);
+          transform: translateY(100px);
+          opacity: 0;
+          visibility: hidden;
+          transition: all 0.3s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+          z-index: 1000;
+        }
+        
+        .toast.show {
+          transform: translateY(0);
+          opacity: 1;
+          visibility: visible;
+        }
+        
+        .toast-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+        }
+        
+        .success-toast .toast-icon {
+          background: rgba(46, 213, 115, 0.1);
+          color: #2ed573;
+        }
+        
+        .error-toast .toast-icon {
+          background: rgba(255, 71, 87, 0.1);
+          color: #ff4757;
+        }
+        
+        .toast-content p {
+          margin: 0;
+          font-size: 0.9375rem;
+          font-weight: 600;
+        }
+        
+        .toast-detail {
+          font-size: 0.8125rem !important;
+          font-weight: 400 !important;
+          color: var(--text-secondary);
+          margin-top: 4px !important;
+        }
+
+        @keyframes animate-fadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        
+        .animate-fadeIn {
+          animation: animate-fadeIn 0.6s forwards;
+        }
+
+        /* Responsive styles */
+        @media (max-width: 767px) {
+          .cart-header h1 {
+            font-size: 2rem;
+          }
+          
+          .item-footer {
+            flex-direction: column;
+            gap: 16px;
+          }
+          
+          .coupon-input-group {
+            flex-direction: column;
+          }
+          
+          .apply-coupon {
+            width: 100%;
+          }
+          
+          .footer-content {
+            flex-direction: column;
+            gap: 16px;
+          }
+          
+          .footer-links {
+            flex-direction: column;
+            gap: 12px;
+            text-align: center;
+          }
+          
+          .toast {
+            left: 16px;
+            right: 16px;
+            bottom: 16px;
+          }
+        }
+      `}</style>
+    </>
+  );
+}

@@ -1,26 +1,36 @@
-// Import the functions you need from the SDKs you need
+// firebase/client.ts
+
 import { initializeApp, getApp, getApps } from "firebase/app";
-import {getAuth} from 'firebase/auth';
-import { getDatabase } from "firebase/database";
-import {getFirestore} from 'firebase/firestore';
+import { getAuth } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
 
-
+// Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyC-utkGN7LfYA7eMu_sSBAUdJD4otXz_tk",
-  authDomain: "prepwise-6014b.firebaseapp.com",
-  projectId: "prepwise-6014b",
-  storageBucket: "prepwise-6014b.firebasestorage.app",
-  messagingSenderId: "110734428949",
-  appId: "1:110734428949:web:b763270c97230355e4f71c",
-  measurementId: "G-NPB5W7F6YH"
+  apiKey: "AIzaSyAoDNvPavELYb_6Gylx12A7Cf75G9Z2nWM",
+  authDomain: "my-project-id-5b000.firebaseapp.com",
+  projectId: "my-project-id-5b000",
+  storageBucket: "my-project-id-5b000.firebasestorage.app",
+  messagingSenderId: "213354384953",
+  appId: "1:213354384953:web:be29a77b2105211d0887e8",
+  measurementId: "G-RFR65GCLTS"
 };
 
-// Initialize Firebase
+// Initialize Firebase app (prevent re-init in Next.js)
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-// const analytics = getAnalytics(app);
 
-// Initialize Firebase
+// REQUIRED exports (used across the app)
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
-export const database = getDatabase(app);
+// (Optional) analytics — REMOVE for now
+// Analytics causes SSR issues in Next.js if misused
+
+// const firebaseConfig = {
+//   apiKey: "AIzaSyAoDNvPavELYb_6Gylx12A7Cf75G9Z2nWM",
+//   authDomain: "my-project-id-5b000.firebaseapp.com",
+//   projectId: "my-project-id-5b000",
+//   storageBucket: "my-project-id-5b000.firebasestorage.app",
+//   messagingSenderId: "213354384953",
+//   appId: "1:213354384953:web:be29a77b2105211d0887e8",
+//   measurementId: "G-RFR65GCLTS"
+// };

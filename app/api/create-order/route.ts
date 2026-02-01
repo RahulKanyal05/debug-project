@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
 import Razorpay from "razorpay";
 
-const razorpay = new Razorpay({
-  key_id: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID!,
-  key_secret: process.env.RAZORPAY_KEY_SECRET!,
-});
-
 export async function POST(req: Request) {
   try {
+    // ✅ CORRECT: Initialize INSIDE the function.
+    // This way, Vercel ignores it during the build.
+    const razorpay = new Razorpay({
+      key_id: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID!,
+      key_secret: process.env.RAZORPAY_KEY_SECRET!,
+    });
+
     const { amount, currency = "INR" } = await req.json();
 
-    // Razorpay needs the amount in the smallest currency unit (Paise for INR)
-    // Your frontend is already sending it in paise, so we use it directly.
     const options = {
       amount: amount.toString(),
       currency,

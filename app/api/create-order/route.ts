@@ -1,47 +1,30 @@
-// app/api/create-order/route.ts
-import { NextResponse } from 'next/server';
-import Razorpay from 'razorpay';
+import { NextResponse } from "next/server";
+import Razorpay from "razorpay";
 
-export async function POST(request: Request) {
+const razorpay = new Razorpay({
+  key_id: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID!,
+  key_secret: process.env.RAZORPAY_KEY_SECRET!,
+});
+
+export async function POST(req: Request) {
   try {
-    const { amount, currency = 'INR', receipt } = await request.json();
+    const { amount, currency = "INR" } = await req.json();
 
-    if (!amount || !receipt) {
-      return NextResponse.json(
-        { error: 'Missing amount or receipt' },
-        { status: 400 }
-      );
-    }
-
-    const key_id = process.env.RAZORPAY_KEY_ID;
-    const key_secret = process.env.RAZORPAY_KEY_SECRET;
-
-    if (!key_id || !key_secret) {
-      return NextResponse.json(
-        { error: 'Razorpay credentials not found' },
-        { status: 500 }
-      );
-    }
-
-    const razorpay = new Razorpay({
-      key_id,
-      key_secret
-    });
-
+    // Razorpay needs the amount in the smallest currency unit (Paise for INR)
+    // Your frontend is already sending it in paise, so we use it directly.
     const options = {
-      amount: amount * 100, // amount in smallest currency unit (e.g., paise)
+      amount: amount.toString(),
       currency,
-      receipt,
-      payment_capture: 1,
+      receipt: `receipt_${Date.now()}`,
     };
 
     const order = await razorpay.orders.create(options);
 
     return NextResponse.json({ order });
   } catch (error) {
-    console.error('Failed to create order:', error);
+    console.error("Error creating Razorpay order:", error);
     return NextResponse.json(
-      { error: 'Failed to create order' },
+      { error: "Error creating order" },
       { status: 500 }
     );
   }

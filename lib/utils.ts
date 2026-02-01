@@ -45,3 +45,25 @@ export const getRandomInterviewCover = () => {
   const randomIndex = Math.floor(Math.random() * interviewCovers.length);
   return `/covers${interviewCovers[randomIndex]}`;
 };
+
+// APPEND TO lib/utils.ts
+
+export function formatCurrency(amount: number, currency: string = "INR") {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: currency,
+    minimumFractionDigits: 0,
+  }).format(amount);
+}
+
+export function formatDate(date: Date | string | number) {
+  return new Date(date).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+export function paisaToAmount(paisa: number) {
+  return paisa / 100;
+}

@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { submitRefundRequest } from '../../lib/razorpay';
-import { formatCurrency, formatDate, paisaToAmount } from '../../lib/utilss';
+import { formatCurrency, formatDate, paisaToAmount } from '../../lib/utils';
 
 type PaymentStatus = 'success' | 'processing' | 'failed';
 

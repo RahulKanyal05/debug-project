@@ -3,9 +3,9 @@
 import { Mona_Sans } from "next/font/google";
 import "./globals.css";  // Your global CSS
 import "../styles/nprogress.css"; // Make sure you import the nprogress styles
-import Navbar from "../components/Navbar"; // Navbar import
+import Navbar from "@/components/layout/Navbar"; // Navbar import
 import { Toaster } from "sonner";
-import RouteLoader from "../components/RouteLoader"; // Import RouteLoader component
+import RouteLoader from "@/components/layout/RouteLoader"; // Import RouteLoader component
 
 const isSignedIn = true; // Replace with your authentication logic
 

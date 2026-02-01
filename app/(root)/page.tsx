@@ -4,13 +4,13 @@ import Image from "next/image";
 import { redirect } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
-import InterviewCard from "@/components/InterviewCard";
+import InterviewCard from "@/components/interview/InterviewCard";
 
 import { getCurrentUser } from "@/lib/actions/auth.action";
 import {
   getInterviewsByUserId,
   getLatestInterviews,
-} from "@/lib/actions/general.action";
+} from "@/lib/actions/interview.action";
 
 async function Home() {
   // Get current user

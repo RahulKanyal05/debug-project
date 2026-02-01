@@ -20,6 +20,7 @@
     "dayjs": "^1.11.13",
     "firebase": "^11.10.0",
     "firebase-admin": "^13.2.0",
+    "firewall": "^0.0.5",
     "framer-motion": "^12.9.2",
     "jspdf": "^3.0.1",
     "lottie-react": "^2.4.1",

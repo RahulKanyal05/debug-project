@@ -3,8 +3,10 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { signOut } from 'firebase/auth';
-import { auth } from '@/firebase/client';
+import { firebaseSignOut } from "@/lib/auth/auth.firebase";
+import { signOutAction } from "@/lib/actions/auth.action";
+import { toast } from "sonner";
+
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface NavLink {
@@ -30,15 +32,24 @@ const Navbar: React.FC = () => {
   const toggleMobileMenu = () => setIsMobileMenuOpen((prev) => !prev);
 
   const handleSignOut = async () => {
-    try {
-      await signOut(auth);
-      setTimeout(() => {
-        router.replace('/sign-in');
-      }, 200);
-    } catch (error) {
-      console.error('Error signing out:', error);
-    }
-  };
+  try {
+    // 1. Firebase sign out
+    await firebaseSignOut();
+
+    // 2. Backend session cleanup
+    await signOutAction();
+
+    toast.success("Signed out successfully");
+
+    // 3. Navigate + revalidate
+    router.replace("/sign-in");
+    router.refresh();
+  } catch (error) {
+    console.error("Error signing out:", error);
+    toast.error("Failed to sign out");
+  }
+};
+
 
   useEffect(() => {
     const handleScroll = () => {

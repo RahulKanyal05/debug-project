@@ -2,11 +2,11 @@ import dayjs from "dayjs";
 import Link from "next/link";
 import Image from "next/image";
 
-import { Button } from "./ui/button";
-import DisplayTechIcons from "./DisplayTechIcons";
+import { Button } from "@/components/ui/button";
+import DisplayTechIcons from "@/components/common/DisplayTechIcons";
 
 import { cn, getRandomInterviewCover } from "@/lib/utils";
-import { getFeedbackByInterviewId } from "@/lib/actions/general.action";
+import { getFeedbackByInterviewId } from "@/lib/actions/interview.action";
 
 const InterviewCard = async ({
   interviewId,

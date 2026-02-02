@@ -1,3 +1,9 @@
 import Vapi from "@vapi-ai/web";
 
-export const vapi = new Vapi(process.env.NEXT_PUBLIC_VAPI_WEB_TOKEN!);
+const publicKey = process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY;
+
+if (!publicKey) {
+  console.error("Missing NEXT_PUBLIC_VAPI_PUBLIC_KEY in .env.local");
+}
+
+export const vapi = new Vapi(publicKey || "dummy-key-to-prevent-crash");

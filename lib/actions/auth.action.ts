@@ -118,3 +118,10 @@ export async function getCurrentUser() {
     return null;
   }
 }
+
+// --- 6. CHECK AUTH STATUS (Missing Helper) ---
+export async function isAuthenticated() {
+  const user = await getCurrentUser();
+  return !!user; // Returns true if user exists, false otherwise
+}
+

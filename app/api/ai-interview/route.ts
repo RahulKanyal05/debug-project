@@ -1,88 +1,129 @@
 import { NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import Groq from "groq-sdk";
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
-
-// 1. Define your model hierarchy (Best -> Backup)
-const MODELS = [
-  "gemini-3-flash-preview", // Try the newest first
-  "gemini-2.5-flash-latest", // Fallback to what you know works
-  "gemini-1.5-flash"        // Last resort
-];
-
-async function generateWithFallback(prompt: string) {
-  let lastError;
-
-  for (const modelName of MODELS) {
-    try {
-      const model = genAI.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      return response.text(); // If success, return immediately
-    } catch (error) {
-      console.warn(`Model ${modelName} failed. Trying next...`);
-      lastError = error;
-      // Continue to next model in loop
-    }
-  }
-  throw lastError; // If all fail, crash.
-}
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export async function POST(req: Request) {
   try {
-    const { action, data } = await req.json();
+    const formData = await req.formData();
+    const action = formData.get("action");
 
-    // --- CASE 1: GENERATE QUESTIONS ---
+    // --- CASE 1: GENERATE QUESTIONS (Unchanged) ---
     if (action === "generate_questions") {
+      const file = formData.get("file") as File;
+      const role = formData.get("role") as string;
+      const difficulty = formData.get("difficulty") as string;
+
+      if (!file) return NextResponse.json({ error: "No resume provided" }, { status: 400 });
+
+      let resumeText = "";
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        // @ts-ignore
+        const PDFParser = require("pdf2json");
+        const parser = new PDFParser(null, 1);
+
+        resumeText = await new Promise((resolve, reject) => {
+          parser.on("pdfParser_dataError", (errData: any) => reject(errData.parserError));
+          parser.on("pdfParser_dataReady", () => resolve(parser.getRawTextContent()));
+          parser.parseBuffer(buffer);
+        }) as string;
+        resumeText = resumeText.slice(0, 6000);
+      } catch (e) {
+        console.error("PDF Parsing Failed:", e);
+        resumeText = `(Parsing failed). Role: ${role}`;
+      }
+
       const prompt = `
-        You are an expert technical interviewer. 
-        Generate 3 challenging interview questions for a "${data.role}" role. 
-        Focus on: ${data.topic || "General Technical Skills"}.
+        You are a technical interviewer. 
+        Role: ${role}
+        Difficulty: ${difficulty || "Mid-Level"}
+        Resume Context: "${resumeText}"
         
-        IMPORTANT: Return ONLY a raw JSON array of strings. 
-        Do not add any markdown, no code blocks, no introductory text.
-        Example: ["Question 1", "Question 2", "Question 3"]
+        Generate exactly 3 Technical Interview Questions.
+        
+        STRUCTURE:
+        1. Questions 1-2: DIRECT DEFINITIONS (Short).
+        2. Questions 3: TECHNICAL DEEP DIVE based on resume(short).
+
+        IMPORTANT: Return a JSON Object with a "questions" key containing an array of strings.
+        Example: { "questions": ["Define X", "What is Y", ...] }
       `;
-      
-      const text = await generateWithFallback(prompt);
-      
-      // Clean up markdown just in case
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) throw new Error("AI did not return a valid JSON array");
-      
-      return NextResponse.json({ questions: JSON.parse(jsonMatch[0]) });
+
+      // Enable JSON Mode
+      const completion = await groq.chat.completions.create({
+        messages: [
+          { role: "system", content: "You are an API that outputs strict JSON." },
+          { role: "user", content: prompt }
+        ],
+        model: "qwen/qwen3-32b",
+        response_format: { type: "json_object" }, // <--- FORCE JSON
+      });
+
+      const text = completion.choices[0]?.message?.content || "{}";
+      const parsed = JSON.parse(text);
+
+      return NextResponse.json({ questions: parsed.questions || [] });
     }
 
-    // --- CASE 2: ANALYZE ANSWER ---
+    // --- CASE 2: ANALYZE ANSWER (The Fix) ---
     if (action === "analyze_answer") {
+      const question = formData.get("question") as string;
+      const answer = formData.get("answer") as string;
+
       const prompt = `
         You are an interview coach.
-        Question: "${data.question}"
-        Candidate Answer: "${data.answer}"
+        Question: "${question}"
+        Candidate Answer: "${answer || "No answer provided."}"
 
-        Analyze this answer. Return a JSON object with:
-        1. "grammarFix": Correct the grammar (string).
-        2. "betterAnswer": A better version using STAR method (string).
-        3. "score": A score out of 100 based on relevance and depth (number).
-        
-        Return ONLY raw JSON.
+        Analyze this answer.
+        Return a JSON object with exactly these keys:
+        {
+          "grammarFix": "Correct the grammar (string).",
+          "betterAnswer": "A better version using STAR method (string).",
+          "score": 50 (number)
+        }
       `;
 
-      const text = await generateWithFallback(prompt);
+      try {
+        const completion = await groq.chat.completions.create({
+          messages: [
+            { role: "system", content: "You are an API that outputs strict JSON." },
+            { role: "user", content: prompt }
+          ],
+          model: "qwen/qwen3-32b",
+          response_format: { type: "json_object" }, // <--- FORCE JSON
+        });
 
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error("AI did not return a valid JSON object");
+        const text = completion.choices[0]?.message?.content || "{}";
+        const feedbackData = JSON.parse(text);
 
-      return NextResponse.json({ feedback: JSON.parse(jsonMatch[0]) });
+        // Robust Key Checking (Handles synonyms)
+        const finalFeedback = {
+          grammarFix: feedbackData.grammarFix || feedbackData.grammar_fix || "No grammar issues found.",
+          betterAnswer: feedbackData.betterAnswer || feedbackData.better_answer || feedbackData.improved_answer || "No improved answer generated.",
+          score: feedbackData.score || 0
+        };
+
+        return NextResponse.json({ feedback: finalFeedback });
+
+      } catch (error) {
+        console.error("Analysis Error:", error);
+        return NextResponse.json({
+          feedback: {
+            grammarFix: "Error analyzing answer.",
+            betterAnswer: "Could not connect to AI.",
+            score: 0
+          }
+        });
+      }
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
 
   } catch (error) {
-    console.error("AI Error:", error);
-    return NextResponse.json({ 
-      error: "Failed to process request", 
-      details: error instanceof Error ? error.message : String(error)
-    }, { status: 500 });
+    console.error("SERVER ERROR:", error);
+    return NextResponse.json({ error: "Server Error", details: String(error) }, { status: 500 });
   }
 }

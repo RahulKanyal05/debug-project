@@ -99,9 +99,9 @@ export default function VideoSpeechAnalyzerPage() {
                 if (alertMsg) alert(alertMsg);
 
                 if (['audio-capture', 'not-allowed', 'service-not-allowed'].includes(event.error)) {
-                     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-                         handleStopRecording(); // Attempt to stop recording fully
-                     }
+                    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+                        handleStopRecording(); // Attempt to stop recording fully
+                    }
                 }
             };
 
@@ -112,24 +112,24 @@ export default function VideoSpeechAnalyzerPage() {
                     // Use setTimeout to avoid immediate restart issues
                     setTimeout(() => {
                         if (recognitionActiveRef.current && speechRecognitionRef.current) {
-                           try {
-                               speechRecognitionRef.current.start();
-                               console.log("Recognition restarted.");
-                           } catch (error: any) {
-                               // Avoid infinite loops on persistent errors
-                               if (error.name !== 'InvalidStateError') {
-                                   console.error("Error restarting recognition:", error);
-                                   recognitionActiveRef.current = false;
-                               } else {
-                                   console.warn("Recognition likely already running, restart aborted.");
-                               }
-                           }
+                            try {
+                                speechRecognitionRef.current.start();
+                                console.log("Recognition restarted.");
+                            } catch (error: any) {
+                                // Avoid infinite loops on persistent errors
+                                if (error.name !== 'InvalidStateError') {
+                                    console.error("Error restarting recognition:", error);
+                                    recognitionActiveRef.current = false;
+                                } else {
+                                    console.warn("Recognition likely already running, restart aborted.");
+                                }
+                            }
                         }
                     }, 250);
                 }
-             };
+            };
 
-             speechRecognitionRef.current = recognition;
+            speechRecognitionRef.current = recognition;
 
         } else {
             alert("FATAL: Your browser does not support the Web Speech API. Speech analysis unavailable.");
@@ -143,7 +143,7 @@ export default function VideoSpeechAnalyzerPage() {
             stopCamera(); // Ensure camera is off
             if (speechRecognitionRef.current) {
                 recognitionActiveRef.current = false; // Prevent restart on unmount
-                try { speechRecognitionRef.current.abort(); } catch (e) {} // Use abort for immediate stop
+                try { speechRecognitionRef.current.abort(); } catch (e) { } // Use abort for immediate stop
                 speechRecognitionRef.current = null;
             }
             // Revoke any lingering object URLs from video list (important for memory)
@@ -168,12 +168,12 @@ export default function VideoSpeechAnalyzerPage() {
             }
             return true;
         } catch (err: any) {
-             let errorMsg = "Could not access camera/microphone.";
-             if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') errorMsg = "Camera/microphone access denied! Allow permissions.";
-             else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') errorMsg = "No camera/microphone found.";
-             else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') errorMsg = "Camera/microphone is busy or unreadable.";
-             else errorMsg = `getUserMedia error: ${err.name}`;
-             alert(errorMsg);
+            let errorMsg = "Could not access camera/microphone.";
+            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') errorMsg = "Camera/microphone access denied! Allow permissions.";
+            else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') errorMsg = "No camera/microphone found.";
+            else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') errorMsg = "Camera/microphone is busy or unreadable.";
+            else errorMsg = `getUserMedia error: ${err.name}`;
+            alert(errorMsg);
             console.error("getUserMedia error details:", err);
             return false;
         }
@@ -196,31 +196,31 @@ export default function VideoSpeechAnalyzerPage() {
             console.error("Stream not available for MediaRecorder");
             return false;
         }
-         recordedChunksRef.current = []; // Clear previous chunks
-         const mimeTypes = [
+        recordedChunksRef.current = []; // Clear previous chunks
+        const mimeTypes = [
             'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus',
             'video/webm;codecs=h264,opus', 'video/mp4;codecs=h264,aac',
             'video/webm', 'video/mp4'
-         ];
-         let selectedMimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || '';
+        ];
+        let selectedMimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || '';
 
-         if (!selectedMimeType) {
+        if (!selectedMimeType) {
             console.error("No suitable MediaRecorder mimeType supported.");
             alert("Video recording format not supported by your browser.");
             return false;
-         }
-         console.log("Using MediaRecorder mimeType:", selectedMimeType);
+        }
+        console.log("Using MediaRecorder mimeType:", selectedMimeType);
 
         try {
-             const recorder = new MediaRecorder(streamRef.current, { mimeType: selectedMimeType });
+            const recorder = new MediaRecorder(streamRef.current, { mimeType: selectedMimeType });
 
-             recorder.ondataavailable = event => {
+            recorder.ondataavailable = event => {
                 if (event.data && event.data.size > 0) {
                     recordedChunksRef.current.push(event.data);
                 }
-             };
+            };
 
-             recorder.onstop = () => {
+            recorder.onstop = () => {
                 console.log("MediaRecorder stopped.");
                 if (recordedChunksRef.current.length === 0) {
                     console.warn("No data recorded.");
@@ -233,28 +233,28 @@ export default function VideoSpeechAnalyzerPage() {
                 // Call function to add video to list state
                 addVideoToList(url, blob, blobType);
                 recordedChunksRef.current = []; // Clear chunks after processing
-             };
+            };
 
-             recorder.onerror = (event: Event) => {
+            recorder.onerror = (event: Event) => {
                 // MediaRecorderErrorEvent is not standard, use Event and access error potentially
                 let error = (event as any).error || new Error('Unknown MediaRecorder Error');
                 console.error("MediaRecorder error:", error);
                 alert(`Recording error: ${error.name || 'Unknown Error'}`);
                 recognitionActiveRef.current = false; // Stop recognition attempts on recorder error
                 if (speechRecognitionRef.current) {
-                    try { speechRecognitionRef.current.stop(); } catch(e){}
+                    try { speechRecognitionRef.current.stop(); } catch (e) { }
                 }
-                 if (isRecording) handleStopRecording(); // Try to stop gracefully
-             };
+                if (isRecording) handleStopRecording(); // Try to stop gracefully
+            };
 
-             mediaRecorderRef.current = recorder;
+            mediaRecorderRef.current = recorder;
             return true;
-         } catch (error: any) {
-             console.error("Failed to create MediaRecorder:", error);
-             alert(`Failed to initialize video recorder: ${error.message}`);
-             return false;
-         }
-     }, [isRecording]); // Re-run if isRecording changes (though setup usually only needed once)
+        } catch (error: any) {
+            console.error("Failed to create MediaRecorder:", error);
+            alert(`Failed to initialize video recorder: ${error.message}`);
+            return false;
+        }
+    }, [isRecording]); // Re-run if isRecording changes (though setup usually only needed once)
 
     // --- Control Functions ---
     const handleStartRecording = useCallback(async () => {
@@ -300,22 +300,22 @@ export default function VideoSpeechAnalyzerPage() {
             return;
         }
 
-         try {
-             currentTranscriptionRef.current = ''; // Ensure clear before starting
-             speechRecognitionRef.current.start();
-             recognitionActiveRef.current = true; // Set flag AFTER successful start
-             console.log("Speech recognition starting.");
-         } catch(err: any) {
-             recognitionActiveRef.current = false;
-             if (err.name === 'InvalidStateError') {
-                 console.warn("Speech recognition already active? Assuming OK.");
-                 recognitionActiveRef.current = true; // Assume it's ok if already started
-             } else {
-                 console.error("Could not start speech recognition:", err);
-                 alert(`Warning: Speech recognition failed (${err.message}). Analysis may be unavailable.`);
-                 // Don't stop recording if only speech fails initially
-             }
-         }
+        try {
+            currentTranscriptionRef.current = ''; // Ensure clear before starting
+            speechRecognitionRef.current.start();
+            recognitionActiveRef.current = true; // Set flag AFTER successful start
+            console.log("Speech recognition starting.");
+        } catch (err: any) {
+            recognitionActiveRef.current = false;
+            if (err.name === 'InvalidStateError') {
+                console.warn("Speech recognition already active? Assuming OK.");
+                recognitionActiveRef.current = true; // Assume it's ok if already started
+            } else {
+                console.error("Could not start speech recognition:", err);
+                alert(`Warning: Speech recognition failed (${err.message}). Analysis may be unavailable.`);
+                // Don't stop recording if only speech fails initially
+            }
+        }
 
     }, [apiKeyError, startCamera, setupMediaRecorder, stopCamera]);
 
@@ -334,19 +334,19 @@ export default function VideoSpeechAnalyzerPage() {
         }
 
         if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-           try {
-               mediaRecorderRef.current.stop();
-               console.log("MediaRecorder stop requested.");
-               // The onstop handler will process the blob
-           } catch (err) {
-               console.error("Error stopping MediaRecorder:", err);
+            try {
+                mediaRecorderRef.current.stop();
+                console.log("MediaRecorder stop requested.");
+                // The onstop handler will process the blob
+            } catch (err) {
+                console.error("Error stopping MediaRecorder:", err);
                 // If recorder stop fails, still proceed to analysis if possible
                 processTranscriptionAndGenerateReport();
-           }
+            }
         } else {
-             console.warn("MediaRecorder not recording or not found, processing transcript only.");
-             // Process transcript even if recorder wasn't running or already stopped
-             processTranscriptionAndGenerateReport();
+            console.warn("MediaRecorder not recording or not found, processing transcript only.");
+            // Process transcript even if recorder wasn't running or already stopped
+            processTranscriptionAndGenerateReport();
         }
         // IMPORTANT: The actual report generation is now triggered by `processTranscriptionAndGenerateReport`
         // which might be called from recorder.onstop OR directly if recorder wasn't recording.
@@ -384,11 +384,11 @@ export default function VideoSpeechAnalyzerPage() {
 
 
     const generateAndDisplayReport = useCallback(async (textToAnalyze: string) => {
-         const modelName = "gemini-1.5-flash-latest"; // Or your preferred model
-         const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiApiKey}`;
-         console.log("Calling Gemini API:", API_URL.replace(geminiApiKey, "YOUR_API_KEY_HIDDEN"));
+        const modelName = "gemini-2.5-flash"; // Or your preferred model
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiApiKey}`;
+        console.log("Calling Gemini API:", API_URL.replace(geminiApiKey, "YOUR_API_KEY_HIDDEN"));
 
-         const prompt = `
+        const prompt = `
 Analyze the following speech transcript professionally. Provide feedback in FOUR distinct parts based *only* on the provided transcript text.
 
 Transcript Provided:
@@ -413,7 +413,7 @@ Format your response EXACTLY like this, using Markdown bold for labels. Keep eac
 ---
 Do NOT add any introductory/concluding remarks, greetings, or apologies. Just provide the four labeled parts. Ensure the **Original Transcript** section contains the unmodified text provided above.
 `;
-         let generatedReportData: ReportData = { original: textToAnalyze, analysis: null, grammar: null, revision: null, error: null };
+        let generatedReportData: ReportData = { original: textToAnalyze, analysis: null, grammar: null, revision: null, error: null };
 
         try {
             const response = await fetch(API_URL, {
@@ -421,69 +421,69 @@ Do NOT add any introductory/concluding remarks, greetings, or apologies. Just pr
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: prompt }] }],
-                     safetySettings: [ // Example Safety Settings
+                    safetySettings: [ // Example Safety Settings
                         { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
                         { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
                         { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
                         { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }
-                     ],
-                     generationConfig: { // Example Generation Config
-                         temperature: 0.6,
-                         maxOutputTokens: 1024
-                      }
+                    ],
+                    generationConfig: { // Example Generation Config
+                        temperature: 0.6,
+                        maxOutputTokens: 1024
+                    }
                 })
             });
 
             if (!response.ok) {
-                 let errorBody = {}; let errorMessage = `API request failed: ${response.status} ${response.statusText}`;
-                 try { errorBody = await response.json(); } catch (e) { /* Ignore parsing error */ }
-                 errorMessage = (errorBody as any)?.error?.message || errorMessage;
-                 throw new Error(errorMessage);
+                let errorBody = {}; let errorMessage = `API request failed: ${response.status} ${response.statusText}`;
+                try { errorBody = await response.json(); } catch (e) { /* Ignore parsing error */ }
+                errorMessage = (errorBody as any)?.error?.message || errorMessage;
+                throw new Error(errorMessage);
             }
 
             const data = await response.json();
             console.log("Gemini API Response Received:", data);
 
-             const candidate = data?.candidates?.[0];
-             if (candidate?.finishReason && !["STOP", "MAX_TOKENS"].includes(candidate.finishReason)) {
-                 let reason = candidate.finishReason;
-                 if (reason === "SAFETY") reason = `Blocked by safety filter (Reason: ${candidate.safetyRatings?.map((r:any)=>r.category).join(', ') || 'Unknown'})`;
-                 generatedReportData.error = `AI generation issue: ${reason}.`;
-                 console.warn(`Gemini generation finished unexpectedly: ${reason}`);
-             } else if (candidate?.content?.parts?.[0]?.text) {
-                 const fullResponseText = candidate.content.parts[0].text;
+            const candidate = data?.candidates?.[0];
+            if (candidate?.finishReason && !["STOP", "MAX_TOKENS"].includes(candidate.finishReason)) {
+                let reason = candidate.finishReason;
+                if (reason === "SAFETY") reason = `Blocked by safety filter (Reason: ${candidate.safetyRatings?.map((r: any) => r.category).join(', ') || 'Unknown'})`;
+                generatedReportData.error = `AI generation issue: ${reason}.`;
+                console.warn(`Gemini generation finished unexpectedly: ${reason}`);
+            } else if (candidate?.content?.parts?.[0]?.text) {
+                const fullResponseText = candidate.content.parts[0].text;
 
-                 // Robust Parsing Function
-                 const parseSection = (label: string, text: string): string | null => {
-                     const escapedLabel = label.replace(/\*/g, '\\*').replace(/ /g, '\\s+'); // Handle potential extra spaces
-                     // Regex to find the label (bold or not, optional colon), capture everything until the next bold label or end of string
-                     const regex = new RegExp(`(?:\\*\\*)?${escapedLabel}(?:\\*\\*)?:?\\s*([\\s\\S]*?)(?=\\n\\*\\*|$)`, 'i');
-                     const match = text.match(regex);
-                     return match?.[1]?.trim() ?? null;
-                 };
+                // Robust Parsing Function
+                const parseSection = (label: string, text: string): string | null => {
+                    const escapedLabel = label.replace(/\*/g, '\\*').replace(/ /g, '\\s+'); // Handle potential extra spaces
+                    // Regex to find the label (bold or not, optional colon), capture everything until the next bold label or end of string
+                    const regex = new RegExp(`(?:\\*\\*)?${escapedLabel}(?:\\*\\*)?:?\\s*([\\s\\S]*?)(?=\\n\\*\\*|$)`, 'i');
+                    const match = text.match(regex);
+                    return match?.[1]?.trim() ?? null;
+                };
 
-                 generatedReportData.original = parseSection("Original Transcript", fullResponseText) ?? textToAnalyze; // Fallback to original if not found
-                 generatedReportData.analysis = parseSection("Detailed Analysis & Feedback", fullResponseText);
-                 generatedReportData.grammar = parseSection("Grammar & Phrasing Issues", fullResponseText);
-                 generatedReportData.revision = parseSection("Suggested Revision", fullResponseText);
+                generatedReportData.original = parseSection("Original Transcript", fullResponseText) ?? textToAnalyze; // Fallback to original if not found
+                generatedReportData.analysis = parseSection("Detailed Analysis & Feedback", fullResponseText);
+                generatedReportData.grammar = parseSection("Grammar & Phrasing Issues", fullResponseText);
+                generatedReportData.revision = parseSection("Suggested Revision", fullResponseText);
 
-                 // Basic validation
-                 if (!generatedReportData.analysis && !generatedReportData.grammar && !generatedReportData.revision) {
-                     console.warn("Parsing failed for analysis, grammar, and revision. Check AI response format. Displaying raw response.");
-                     if (!generatedReportData.error) { // Avoid overwriting safety/other errors
-                         generatedReportData.error = "Could not parse the AI response structure. Raw response shown below.";
-                         generatedReportData.analysis = fullResponseText; // Put raw response in analysis
-                         generatedReportData.grammar = "(Parsing Error)";
-                         generatedReportData.revision = "(Parsing Error)";
-                     }
-                 } else {
-                     console.log("Report content parsed successfully.");
-                 }
+                // Basic validation
+                if (!generatedReportData.analysis && !generatedReportData.grammar && !generatedReportData.revision) {
+                    console.warn("Parsing failed for analysis, grammar, and revision. Check AI response format. Displaying raw response.");
+                    if (!generatedReportData.error) { // Avoid overwriting safety/other errors
+                        generatedReportData.error = "Could not parse the AI response structure. Raw response shown below.";
+                        generatedReportData.analysis = fullResponseText; // Put raw response in analysis
+                        generatedReportData.grammar = "(Parsing Error)";
+                        generatedReportData.revision = "(Parsing Error)";
+                    }
+                } else {
+                    console.log("Report content parsed successfully.");
+                }
 
-             } else {
+            } else {
                 generatedReportData.error = "Received an empty or unexpected response structure from the API.";
                 console.error("Unexpected API response structure:", data);
-             }
+            }
 
         } catch (error: any) {
             console.error("Error during report generation:", error);
@@ -502,7 +502,7 @@ Do NOT add any introductory/concluding remarks, greetings, or apologies. Just pr
         const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         const videoName = `Recording ${timestamp}`;
         const fileExtension = mimeType.includes('mp4') ? 'mp4' : 'webm';
-        const downloadFileName = `Recording_${new Date().toISOString().replace(/[-:T.]/g, "").slice(0,15)}.${fileExtension}`;
+        const downloadFileName = `Recording_${new Date().toISOString().replace(/[-:T.]/g, "").slice(0, 15)}.${fileExtension}`;
         const newVideo: RecordedVideo = {
             id: url, // Use URL as unique key for this session
             name: videoName,
@@ -562,16 +562,16 @@ Do NOT add any introductory/concluding remarks, greetings, or apologies. Just pr
                 lines.forEach((line: string) => {
                     if (y + lineSpacing > doc.internal.pageSize.getHeight() - 15) {
                         doc.addPage(); y = 15;
-                        if(isHeading) { // Re-apply heading style on new page if needed
-                             doc.setFont('helvetica', 'bold'); doc.setFontSize(fontSize);
+                        if (isHeading) { // Re-apply heading style on new page if needed
+                            doc.setFont('helvetica', 'bold'); doc.setFontSize(fontSize);
                         } else {
-                             doc.setFont('helvetica', 'normal'); doc.setFontSize(11); // Reset style
+                            doc.setFont('helvetica', 'normal'); doc.setFontSize(11); // Reset style
                         }
                     }
                     doc.text(line, x, y);
                     y += lineSpacing;
                 });
-                 if (!isHeading || lines.length > 1) { y += lineSpacing / 2; }
+                if (!isHeading || lines.length > 1) { y += lineSpacing / 2; }
             };
 
             // Document Title
@@ -588,7 +588,7 @@ Do NOT add any introductory/concluding remarks, greetings, or apologies. Just pr
             if (reportData.grammar) { addWrappedText("Grammar & Phrasing Issues", true, 14, true); y += lineSpacing / 2; addWrappedText(reportData.grammar); y += sectionSpacing; }
             if (reportData.revision) { addWrappedText("Suggested Revision", true, 14, true); y += lineSpacing / 2; addWrappedText(reportData.revision); }
 
-            const pdfFileName = `Analysis_Report_${new Date().toISOString().replace(/[-:T.]/g, "").slice(0,15)}.pdf`;
+            const pdfFileName = `Analysis_Report_${new Date().toISOString().replace(/[-:T.]/g, "").slice(0, 15)}.pdf`;
             doc.save(pdfFileName);
             console.log("PDF report download initiated.");
 
@@ -1048,11 +1048,11 @@ Do NOT add any introductory/concluding remarks, greetings, or apologies. Just pr
                                 Stop Recording
                             </button>
                         </div>
-                         {apiKeyError && (
+                        {apiKeyError && (
                             <p style={{ color: '#f44336', marginTop: '10px', fontSize: '0.9em' }}>
                                 Error: API Key missing or invalid. Cannot start recording.
                             </p>
-                         )}
+                        )}
                     </div>
 
                     {/* Report Section - Conditionally Rendered */}
@@ -1105,7 +1105,7 @@ Do NOT add any introductory/concluding remarks, greetings, or apologies. Just pr
                                                 </div>
                                             )}
                                         </>
-                                    ) : null /* Don't show other parts if there's a fatal error */ }
+                                    ) : null /* Don't show other parts if there's a fatal error */}
                                 </div>
                             )}
 

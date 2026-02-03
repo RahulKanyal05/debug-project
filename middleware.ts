@@ -1,31 +1,64 @@
+// // middleware.ts
+// import { NextResponse } from 'next/server';
+// import type { NextRequest } from 'next/server';
+
+// // Paths that don't require authentication
+// const PUBLIC_PATHS = ['/sign-in', '/sign-up', '/reset-password'];
+
+// // Check if the current path matches any of the public paths
+// function isPublicPath(path: string): boolean {
+//   return PUBLIC_PATHS.some(publicPath => path.startsWith(publicPath));
+// }
+
+// export async function middleware(request: NextRequest) {
+//   const { pathname } = request.nextUrl;
+
+//   // Get session cookie
+//   const sessionCookie = request.cookies.get("session");
+//   const isAuthenticated = !!sessionCookie?.value;
+
+//   // If not authenticated and trying to access a protected route, redirect to sign-in
+//   if (!isAuthenticated && !isPublicPath(pathname)) {
+//     const signInUrl = new URL('/sign-in', request.url);
+//     return NextResponse.redirect(signInUrl);
+//   }
+
+//   // If authenticated and trying to access auth pages, redirect to home
+//   if (isAuthenticated && isPublicPath(pathname)) {
+//     return NextResponse.redirect(new URL('/', request.url));
+//   }
+
+//   return NextResponse.next();
+// }
+
+// // Configure which paths the middleware applies to
+// export const config = {
+//   matcher: [
+//     '/((?!api|_next/static|_next/image|favicon.ico|.*\\.png$|.*\\.jpg$).*)',
+//   ],
+// };
+
+// middleware.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+const PUBLIC_PATHS = ["/sign-in", "/sign-up"];
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const sessionCookie = request.cookies.get("session");
 
-  // 1. Define Public Paths (Exact matches or starts with)
-  const isPublicPath = pathname === "/sign-in" || pathname === "/sign-up";
-
-  // 2. IF USER IS LOGGED IN
-  if (sessionCookie) {
-    // If they are on Login/Signup page, force them to Home
-    if (isPublicPath) {
-      return NextResponse.redirect(new URL("/", request.url));
-    }
-    // Otherwise, let them go wherever they want
+  // Ignore public routes
+  if (PUBLIC_PATHS.some(path => pathname.startsWith(path))) {
     return NextResponse.next();
   }
 
-  // 3. IF USER IS *NOT* LOGGED IN
+  const sessionCookie = request.cookies.get("session");
+
+  // Protect everything else
   if (!sessionCookie) {
-    // If they are ALREADY on a public page, let them stay there (STOPS THE LOOP)
-    if (isPublicPath) {
-      return NextResponse.next();
-    }
-    // Otherwise, kick them to Sign In
-    return NextResponse.redirect(new URL("/sign-in", request.url));
+    return NextResponse.redirect(
+      new URL("/sign-in", request.url)
+    );
   }
 
   return NextResponse.next();
@@ -33,14 +66,6 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder files (svg, png, jpg, etc.)
-     */
-    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.svg|.*\\.png).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico).*)",
   ],
 };

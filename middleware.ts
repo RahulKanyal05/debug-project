@@ -1,32 +1,33 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/sign-in", "/sign-up"];
-
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const sessionCookie = request.cookies.get("session");
 
-  // CASE 1: User is Logged In + Trying to access Login/Signup
-  // ACTION: Redirect them to Home (Stop them from seeing login page again)
-  if (sessionCookie && PUBLIC_PATHS.some(path => pathname.startsWith(path))) {
-    return NextResponse.redirect(new URL("/", request.url));
-  }
+  // 1. Define Public Paths (Exact matches or starts with)
+  const isPublicPath = pathname === "/sign-in" || pathname === "/sign-up";
 
-  // CASE 2: User is on a Public Path (and not logged in)
-  // ACTION: Let them pass
-  if (PUBLIC_PATHS.some(path => pathname.startsWith(path))) {
+  // 2. IF USER IS LOGGED IN
+  if (sessionCookie) {
+    // If they are on Login/Signup page, force them to Home
+    if (isPublicPath) {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
+    // Otherwise, let them go wherever they want
     return NextResponse.next();
   }
 
-  // CASE 3: User is Not Logged In + Trying to access Private Route
-  // ACTION: Kick them to Sign In
+  // 3. IF USER IS *NOT* LOGGED IN
   if (!sessionCookie) {
+    // If they are ALREADY on a public page, let them stay there (STOPS THE LOOP)
+    if (isPublicPath) {
+      return NextResponse.next();
+    }
+    // Otherwise, kick them to Sign In
     return NextResponse.redirect(new URL("/sign-in", request.url));
   }
 
-  // CASE 4: User is Logged In + Accessing Private Route
-  // ACTION: Let them pass
   return NextResponse.next();
 }
 
@@ -38,7 +39,8 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
+     * - public folder files (svg, png, jpg, etc.)
      */
-    "/((?!api|_next/static|_next/image|favicon.ico).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.svg|.*\\.png).*)",
   ],
 };

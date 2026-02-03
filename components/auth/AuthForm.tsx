@@ -22,7 +22,7 @@ import { getAuthErrorMessage } from "@/lib/auth/auth.errors";
 import { signIn, signUp } from "@/lib/actions/auth.action";
 
 /* -------------------------------------------------------------------------- */
-/*                                SCHEMAS                                     */
+/* SCHEMAS                                     */
 /* -------------------------------------------------------------------------- */
 
 const signInSchema = z.object({
@@ -47,7 +47,7 @@ type AuthFormProps = {
 };
 
 /* -------------------------------------------------------------------------- */
-/*                                COMPONENT                                   */
+/* COMPONENT                                   */
 /* -------------------------------------------------------------------------- */
 
 const AuthForm = ({ type }: AuthFormProps) => {
@@ -66,7 +66,7 @@ const AuthForm = ({ type }: AuthFormProps) => {
   });
 
   /* ------------------------------------------------------------------------ */
-  /*                               HANDLERS                                   */
+  /* HANDLERS                                   */
   /* ------------------------------------------------------------------------ */
 
   const handleSubmit = async (values: AuthFormValues) => {
@@ -89,8 +89,11 @@ const AuthForm = ({ type }: AuthFormProps) => {
         }
 
         toast.success("Signed in successfully");
-        router.push("/");
-        router.refresh(); // 🔥 REQUIRED for middleware sync
+
+        // 🔥 FIX 1: FORCE HARD REDIRECT
+        // window.location.href ensures the cookie is seen by the server
+        window.location.href = "/";
+
       } else {
         // ---------- EMAIL SIGN UP ----------
         const cred = await signUpWithEmail(values.email, values.password);
@@ -107,7 +110,6 @@ const AuthForm = ({ type }: AuthFormProps) => {
 
         toast.success("Account created. Please sign in.");
         router.push("/sign-in");
-        router.refresh();
       }
     } catch (error) {
       toast.error(getAuthErrorMessage(error));
@@ -152,19 +154,21 @@ const AuthForm = ({ type }: AuthFormProps) => {
         }
       }
       toast.success("Signed in with Google");
-      router.push("/");
-      router.refresh(); // 🔥 REQUIRED
+
+      // 🔥 FIX 2: FORCE HARD REDIRECT HERE TOO
+      window.location.href = "/";
+
     } catch (error) {
       toast.error(getAuthErrorMessage(error));
       console.error("Google auth error:", error);
     } finally {
       setLoading(false);
     }
-    
+
   };
 
   /* ------------------------------------------------------------------------ */
-  /*                                   UI                                     */
+  /* UI                                      */
   /* ------------------------------------------------------------------------ */
 
   return (
@@ -212,8 +216,8 @@ const AuthForm = ({ type }: AuthFormProps) => {
               {loading
                 ? "Please wait..."
                 : isSignIn
-                ? "Sign In"
-                : "Create Account"}
+                  ? "Sign In"
+                  : "Create Account"}
             </Button>
 
             <Button

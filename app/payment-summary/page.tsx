@@ -93,7 +93,6 @@ function PaymentSummaryClient() {
       const response = await submitRefundRequest(
         paymentId || '',
         refundReason,
-        payment?.email || ''
       );
 
       if (response.success) {

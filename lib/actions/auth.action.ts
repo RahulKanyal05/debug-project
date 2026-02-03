@@ -6,12 +6,12 @@ import { cookies } from "next/headers";
 // Session duration (1 week)
 const SESSION_DURATION = 60 * 60 * 24 * 7;
 
-// Set session cookie
+// --- 1. SET SESSION COOKIE (Helper) ---
 export async function setSessionCookie(idToken: string) {
-  const cookieStore = await cookies();
-
   try {
-    // Create session cookie
+    const cookieStore = await cookies();
+
+    // Create session cookie from Firebase Admin
     const sessionCookie = await auth.createSessionCookie(idToken, {
       expiresIn: SESSION_DURATION * 1000, // milliseconds
     });
@@ -20,161 +20,101 @@ export async function setSessionCookie(idToken: string) {
     cookieStore.set("session", sessionCookie, {
       maxAge: SESSION_DURATION,
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: process.env.NODE_ENV === "production", // True on Vercel
       path: "/",
       sameSite: "lax",
     });
-    
+
     return { success: true };
   } catch (error) {
     console.error("Error setting session cookie:", error);
-    return { success: false, message: "Failed to create session" };
+    return { success: false, message: "Failed to create session cookie" };
   }
 }
 
-export async function signUp(params: SignUpParams) {
+// --- 2. SIGN UP ---
+export async function signUp(params: any) {
   const { uid, name, email } = params;
 
   if (!uid || !name || !email) {
-    return {
-      success: false,
-      message: "Missing required fields for signup",
-    };
+    return { success: false, message: "Missing required fields" };
   }
 
   try {
-    // check if user exists in db
     const userRecord = await db.collection("users").doc(uid).get();
-    if (userRecord.exists)
-      return {
-        success: false,
-        message: "User already exists. Please sign in.",
-      };
+    if (userRecord.exists) {
+      return { success: false, message: "User already exists. Please sign in." };
+    }
 
-    // save user to db
     await db.collection("users").doc(uid).set({
       name,
       email,
       createdAt: new Date().toISOString(),
-      // profileURL,
-      // resumeURL,
     });
 
-    return {
-      success: true,
-      message: "Account created successfully. Please sign in.",
-    };
+    return { success: true, message: "Account created successfully." };
   } catch (error: any) {
     console.error("Error creating user:", error);
-
-    // Handle Firebase specific errors
-    if (error.code === "auth/email-already-exists") {
-      return {
-        success: false,
-        message: "This email is already in use",
-      };
-    }
-
-    return {
-      success: false,
-      message: "Failed to create account. Please try again.",
-    };
+    return { success: false, message: error.message || "Failed to create account." };
   }
 }
 
-// In lib/actions/auth.action.ts
-export async function signIn(params: SignInParams) {
+// --- 3. SIGN IN (THE FIXED FUNCTION) ---
+export async function signIn(params: any) {
   const { email, idToken } = params;
 
   if (!email || !idToken) {
-    return {
-      success: false,
-      message: "Missing email or authentication token",
-    };
+    return { success: false, message: "Missing email or token" };
   }
 
   try {
+    // 1. Check if user exists in Firebase Auth
+    // (Note: We use getUserByEmail to ensure the user is real)
     const userRecord = await auth.getUserByEmail(email);
     if (!userRecord) {
-      return {
-        success: false,
-        message: "User does not exist. Create an account.",
-      };
+      return { success: false, message: "User not found. Please sign up." };
     }
 
-    await setSessionCookie(idToken);
-    
-    return {
-      success: true,
-      message: "Signed in successfully"
-    };
+    // 2. ATTEMPT TO SET COOKIE
+    const cookieResult = await setSessionCookie(idToken);
+
+    // 3. CRITICAL CHECK: Did the cookie actually set?
+    if (!cookieResult.success) {
+      return { success: false, message: "Session creation failed. Check server logs." };
+    }
+
+    // 4. Only return true if cookie was set
+    return { success: true, message: "Signed in successfully" };
+
   } catch (error: any) {
     console.error("Sign in error:", error);
-
-    return {
-      success: false,
-      message: "Failed to log into account. Please try again.",
-    };
+    return { success: false, message: "Authentication failed." };
   }
 }
 
-// Sign out user by clearing the session cookie
+// --- 4. SIGN OUT ---
 export async function signOutAction() {
-  try {
-    const cookieStore = await cookies();
-    cookieStore.delete("session");
-    return { success: true };
-  } catch (error) {
-    console.error("Error signing out:", error);
-    return { success: false };
-  }
+  const cookieStore = await cookies();
+  cookieStore.delete("session");
+  return { success: true };
 }
 
-
-// Get current user from session cookie
-export async function getCurrentUser(): Promise<User | null> {
+// --- 5. GET CURRENT USER ---
+export async function getCurrentUser() {
   const cookieStore = await cookies();
-
   const sessionCookie = cookieStore.get("session")?.value;
-  if (!sessionCookie) {
-    return null;
-  }
+
+  if (!sessionCookie) return null;
 
   try {
     const decodedClaims = await auth.verifySessionCookie(sessionCookie, true);
-    
-    if (!decodedClaims || !decodedClaims.uid) {
-      return null;
-    }
+    if (!decodedClaims?.uid) return null;
 
-    // get user info from db
-    const userRecord = await db
-      .collection("users")
-      .doc(decodedClaims.uid)
-      .get();
-      
-    if (!userRecord.exists) {
-      return null;
-    }
-
-    const userData = userRecord.data();
-    if (!userData) {
-      return null;
-    }
-
-    return {
-      ...userData,
-      id: userRecord.id,
-    } as User;
+    const userRecord = await db.collection("users").doc(decodedClaims.uid).get();
+    return userRecord.exists ? { ...userRecord.data(), id: userRecord.id } : null;
   } catch (error) {
-    console.error("Error verifying session:", error);
-    // Invalid or expired session
+    // console.error("Session verification failed:", error); 
+    // ^ Silence this error because it happens normally when session expires
     return null;
   }
-}
-
-// Check if user is authenticated
-export async function isAuthenticated() {
-  const user = await getCurrentUser();
-  return !!user;
 }

@@ -4,7 +4,6 @@ import { z } from "zod";
 import Link from "next/link";
 import Image from "next/image";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -18,22 +17,23 @@ import {
   signUpWithEmail,
   signInWithGoogle,
 } from "@/lib/auth/auth.firebase";
+
 import { getAuthErrorMessage } from "@/lib/auth/auth.errors";
 import { signIn, signUp } from "@/lib/actions/auth.action";
 
 /* -------------------------------------------------------------------------- */
-/* SCHEMAS                                     */
+/* SCHEMAS                                                                     */
 /* -------------------------------------------------------------------------- */
 
 const signInSchema = z.object({
-  email: z.string().email("Enter a valid email"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  email: z.string().email(),
+  password: z.string().min(6),
 });
 
 const signUpSchema = z.object({
-  name: z.string().min(3, "Name must be at least 3 characters"),
-  email: z.string().email("Enter a valid email"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  name: z.string().min(3),
+  email: z.string().email(),
+  password: z.string().min(6),
 });
 
 type AuthFormValues = {
@@ -42,16 +42,15 @@ type AuthFormValues = {
   password: string;
 };
 
-type AuthFormProps = {
+type Props = {
   type: "sign-in" | "sign-up";
 };
 
 /* -------------------------------------------------------------------------- */
-/* COMPONENT                                   */
+/* COMPONENT                                                                   */
 /* -------------------------------------------------------------------------- */
 
-const AuthForm = ({ type }: AuthFormProps) => {
-  const router = useRouter();
+export default function AuthForm({ type }: Props) {
   const [loading, setLoading] = useState(false);
 
   const isSignIn = type === "sign-in";
@@ -66,120 +65,147 @@ const AuthForm = ({ type }: AuthFormProps) => {
   });
 
   /* ------------------------------------------------------------------------ */
-  /* HANDLERS                                   */
+  /* EMAIL AUTH                                                               */
   /* ------------------------------------------------------------------------ */
 
   const handleSubmit = async (values: AuthFormValues) => {
     if (loading) return;
+
     setLoading(true);
 
     try {
       if (isSignIn) {
-        // ---------- EMAIL SIGN IN ----------
-        const cred = await signInWithEmail(values.email, values.password);
+        /* ---------------------------- SIGN IN ---------------------------- */
+
+        const cred = await signInWithEmail(
+          values.email,
+          values.password
+        );
+
         const idToken = await cred.user.getIdToken();
 
-        const result = await signIn({
+        const res = await signIn({
           email: values.email,
           idToken,
         });
 
-        if (!result?.success) {
-          throw new Error(result?.message || "Sign in failed");
+        if (!res?.success) {
+          throw new Error(res?.message);
         }
 
-        toast.success("Signed in successfully");
+        toast.success("Signed in");
 
-        // 🔥 FIX 1: FORCE HARD REDIRECT
-        // window.location.href ensures the cookie is seen by the server
-        window.location.href = "/";
+        // Hard reload (important)
+        window.location.assign("/");
 
       } else {
-        // ---------- EMAIL SIGN UP ----------
-        const cred = await signUpWithEmail(values.email, values.password);
+        /* ---------------------------- SIGN UP ---------------------------- */
 
-        const result = await signUp({
+        const cred = await signUpWithEmail(
+          values.email,
+          values.password
+        );
+
+        const res = await signUp({
           uid: cred.user.uid,
           name: values.name!,
           email: values.email,
         });
 
-        if (!result.success) {
-          throw new Error(result.message);
+        if (!res?.success) {
+          throw new Error(res?.message);
         }
 
-        toast.success("Account created. Please sign in.");
-        router.push("/sign-in");
+        toast.success("Account created");
+
+        window.location.assign("/sign-in");
       }
-    } catch (error) {
-      toast.error(getAuthErrorMessage(error));
-      console.error("Auth error:", error);
+    } catch (err) {
+      toast.error(getAuthErrorMessage(err));
+      console.error("Auth error:", err);
     } finally {
       setLoading(false);
     }
   };
 
+  /* ------------------------------------------------------------------------ */
+  /* GOOGLE AUTH                                                              */
+  /* ------------------------------------------------------------------------ */
+
   const handleGoogleSignIn = async () => {
     if (loading) return;
+
     setLoading(true);
 
     try {
       const cred = await signInWithGoogle();
 
       if (!cred.user.email) {
-        throw new Error("Google account has no email");
+        throw new Error("Missing email");
       }
 
       const idToken = await cred.user.getIdToken();
 
-      // Try backend sign-in
-      const signInResult = await signIn({
+      let res = await signIn({
         email: cred.user.email,
         idToken,
       });
 
-      if (!signInResult?.success) {
-        // User not in DB → create
-        const displayName =
-          cred.user.displayName || cred.user.email.split("@")[0];
+      // Auto-create if not exists
+      if (!res?.success) {
+        const name =
+          cred.user.displayName ||
+          cred.user.email.split("@")[0];
 
-        const signUpResult = await signUp({
+        const signup = await signUp({
           uid: cred.user.uid,
-          name: displayName,
+          name,
           email: cred.user.email,
         });
 
-        if (!signUpResult?.success) {
-          throw new Error(signUpResult?.message || "Google sign-in failed");
+        if (!signup.success) {
+          throw new Error(signup.message);
+        }
+
+        // Retry login
+        res = await signIn({
+          email: cred.user.email,
+          idToken,
+        });
+
+        if (!res.success) {
+          throw new Error("Login failed");
         }
       }
-      toast.success("Signed in with Google");
 
-      // 🔥 FIX 2: FORCE HARD REDIRECT HERE TOO
-      window.location.href = "/";
+      toast.success("Signed in");
 
-    } catch (error) {
-      toast.error(getAuthErrorMessage(error));
-      console.error("Google auth error:", error);
+      window.location.assign("/");
+
+    } catch (err) {
+      toast.error(getAuthErrorMessage(err));
+      console.error("Google auth error:", err);
     } finally {
       setLoading(false);
     }
-
   };
 
   /* ------------------------------------------------------------------------ */
-  /* UI                                      */
+  /* UI                                                                       */
   /* ------------------------------------------------------------------------ */
 
   return (
     <div className="card-border lg:min-w-[566px]">
       <div className="card flex flex-col gap-6 py-14 px-10">
+
         <div className="flex justify-center gap-2">
           <Image src="/logo.svg" alt="logo" height={32} width={38} />
           <h2 className="text-primary-100">PrepWise</h2>
         </div>
 
-        <h3 className="text-center">Practice job interviews with AI</h3>
+        <h3 className="text-center">
+          Practice job interviews with AI
+        </h3>
 
         <Form {...form}>
           <form
@@ -212,7 +238,11 @@ const AuthForm = ({ type }: AuthFormProps) => {
               type="password"
             />
 
-            <Button className="btn w-full" type="submit" disabled={loading}>
+            <Button
+              className="btn w-full"
+              type="submit"
+              disabled={loading}
+            >
               {loading
                 ? "Please wait..."
                 : isSignIn
@@ -233,7 +263,10 @@ const AuthForm = ({ type }: AuthFormProps) => {
         </Form>
 
         <p className="text-center">
-          {isSignIn ? "No account yet?" : "Already have an account?"}
+          {isSignIn
+            ? "No account yet?"
+            : "Already have an account?"}
+
           <Link
             href={isSignIn ? "/sign-up" : "/sign-in"}
             className="ml-1 font-bold text-user-primary"
@@ -244,6 +277,4 @@ const AuthForm = ({ type }: AuthFormProps) => {
       </div>
     </div>
   );
-};
-
-export default AuthForm;
+}

@@ -24,7 +24,7 @@
     "firewall": "^0.0.5",
     "framer-motion": "^12.9.2",
     "groq-sdk": "^0.37.0",
-    "jspdf": "^4.0.0",
+    "jspdf": "^4.1.0",
     "jspdf-autotable": "^5.0.7",
     "lottie-react": "^2.4.1",
     "lucide-react": "^0.482.0",

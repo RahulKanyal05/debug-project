@@ -3,24 +3,29 @@ import Razorpay from "razorpay";
 
 export async function POST(req: Request) {
   try {
-    // ✅ CORRECT: Initialize INSIDE the function.
-    // This way, Vercel ignores it during the build.
     const razorpay = new Razorpay({
       key_id: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID!,
       key_secret: process.env.RAZORPAY_KEY_SECRET!,
     });
 
-    const { amount, currency = "INR" } = await req.json();
+    const body = await req.json();
+    const { amount } = body; // Expecting amount in INR (e.g., 499)
 
     const options = {
-      amount: amount.toString(),
-      currency,
+      amount: Math.round(amount * 100), // Convert INR to Paise (integers only)
+      currency: "INR",
       receipt: `receipt_${Date.now()}`,
     };
 
     const order = await razorpay.orders.create(options);
 
-    return NextResponse.json({ order });
+    return NextResponse.json({
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      keyId: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID
+    });
+
   } catch (error) {
     console.error("Error creating Razorpay order:", error);
     return NextResponse.json(

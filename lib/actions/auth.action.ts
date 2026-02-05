@@ -2,49 +2,46 @@
 
 import { auth, db } from "@/firebase/admin";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
-// Session duration (1 week)
-const SESSION_DURATION = 60 * 60 * 24 * 7;
+const SESSION_DURATION = 60 * 60 * 24 * 7; // 7 Days
 
-// --- 1. SET SESSION COOKIE (Helper) ---
-export async function setSessionCookie(idToken: string) {
+/* -------------------------------------------------------------------------- */
+/* HELPERS                                                                    */
+/* -------------------------------------------------------------------------- */
+
+async function setSessionCookie(idToken: string) {
   try {
     const cookieStore = await cookies();
-
-    // Create session cookie from Firebase Admin
     const sessionCookie = await auth.createSessionCookie(idToken, {
-      expiresIn: SESSION_DURATION * 1000, // milliseconds
+      expiresIn: SESSION_DURATION * 1000,
     });
 
-    // Set cookie in the browser
     cookieStore.set("session", sessionCookie, {
       maxAge: SESSION_DURATION,
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // True on Vercel
+      secure: process.env.NODE_ENV === "production",
       path: "/",
       sameSite: "lax",
     });
 
-    return { success: true };
-  } catch (error) {
-    console.error("Error setting session cookie:", error);
-    return { success: false, message: "Failed to create session cookie" };
+    return true;
+  } catch (err) {
+    console.error("Set session cookie error:", err);
+    return false;
   }
 }
 
-// --- 2. SIGN UP ---
-export async function signUp(params: any) {
+/* -------------------------------------------------------------------------- */
+/* SIGN UP                                                                    */
+/* -------------------------------------------------------------------------- */
+
+export async function signUp(params: { uid: string; name: string; email: string }) {
   const { uid, name, email } = params;
 
-  if (!uid || !name || !email) {
-    return { success: false, message: "Missing required fields" };
-  }
-
   try {
-    const userRecord = await db.collection("users").doc(uid).get();
-    if (userRecord.exists) {
-      return { success: false, message: "User already exists. Please sign in." };
-    }
+    const doc = await db.collection("users").doc(uid).get();
+    if (doc.exists) return { success: false, message: "User already exists" };
 
     await db.collection("users").doc(uid).set({
       name,
@@ -52,76 +49,98 @@ export async function signUp(params: any) {
       createdAt: new Date().toISOString(),
     });
 
-    return { success: true, message: "Account created successfully." };
-  } catch (error: any) {
-    console.error("Error creating user:", error);
-    return { success: false, message: error.message || "Failed to create account." };
+    return { success: true };
+  } catch (err: any) {
+    console.error("Sign up error:", err);
+    return { success: false, message: err.message || "Signup failed" };
   }
 }
 
-// --- 3. SIGN IN (THE FIXED FUNCTION) ---
-export async function signIn(params: any) {
+/* -------------------------------------------------------------------------- */
+/* SIGN IN                                                                    */
+/* -------------------------------------------------------------------------- */
+
+export async function signIn(params: { email: string; idToken: string }) {
   const { email, idToken } = params;
 
-  if (!email || !idToken) {
-    return { success: false, message: "Missing email or token" };
-  }
+  if (!email || !idToken) return { success: false, message: "Missing credentials" };
 
   try {
-    // 1. Check if user exists in Firebase Auth
-    // (Note: We use getUserByEmail to ensure the user is real)
+    // 1. Verify User in Auth
     const userRecord = await auth.getUserByEmail(email);
-    if (!userRecord) {
-      return { success: false, message: "User not found. Please sign up." };
+
+    // 2. Auto-Fix: Ensure DB Profile Exists
+    const userDoc = await db.collection("users").doc(userRecord.uid).get();
+    if (!userDoc.exists) {
+      await db.collection("users").doc(userRecord.uid).set({
+        name: userRecord.displayName || email.split("@")[0],
+        email: userRecord.email,
+        createdAt: new Date().toISOString(),
+        photoURL: userRecord.photoURL || null,
+      });
     }
 
-    // 2. ATTEMPT TO SET COOKIE
-    const cookieResult = await setSessionCookie(idToken);
+    // 3. Set Cookie
+    const ok = await setSessionCookie(idToken);
+    if (!ok) return { success: false, message: "Session creation failed" };
 
-    // 3. CRITICAL CHECK: Did the cookie actually set?
-    if (!cookieResult.success) {
-      return { success: false, message: "Session creation failed. Check server logs." };
+  } catch (err: any) {
+    console.error("Sign in error:", err);
+    return { success: false, message: "Authentication failed" };
+  }
+
+  // 4. Force Server Redirect
+  redirect("/");
+}
+
+/* -------------------------------------------------------------------------- */
+/* GET CURRENT USER (Clean & Self-Healing)                                    */
+/* -------------------------------------------------------------------------- */
+
+export async function getCurrentUser() {
+  const cookieStore = await cookies();
+  const session = cookieStore.get("session")?.value;
+
+  if (!session) return null;
+
+  try {
+    const decoded = await auth.verifySessionCookie(session, true);
+    if (!decoded?.uid) return null;
+
+    const userDoc = await db.collection("users").doc(decoded.uid).get();
+
+    // Standard Case: User found
+    if (userDoc.exists) {
+      return { id: userDoc.id, ...userDoc.data() };
     }
 
-    // 4. Only return true if cookie was set
-    return { success: true, message: "Signed in successfully" };
+    // Edge Case: Ghost User (Auto-Fix silently)
+    const newUser = {
+      name: decoded.name || decoded.email?.split("@")[0] || "User",
+      email: decoded.email || "",
+      createdAt: new Date().toISOString(),
+      photoURL: decoded.picture || null,
+    };
+    await db.collection("users").doc(decoded.uid).set(newUser);
 
-  } catch (error: any) {
-    console.error("Sign in error:", error);
-    return { success: false, message: "Authentication failed." };
+    return { id: decoded.uid, ...newUser };
+
+  } catch {
+    return null;
   }
 }
 
-// --- 4. SIGN OUT ---
+/* -------------------------------------------------------------------------- */
+/* AUTH CHECK                                                                 */
+/* -------------------------------------------------------------------------- */
+
+export async function isAuthenticated() {
+  const user = await getCurrentUser();
+  return !!user;
+}
+
 export async function signOutAction() {
   const cookieStore = await cookies();
   cookieStore.delete("session");
   return { success: true };
 }
-
-// --- 5. GET CURRENT USER ---
-export async function getCurrentUser() {
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get("session")?.value;
-
-  if (!sessionCookie) return null;
-
-  try {
-    const decodedClaims = await auth.verifySessionCookie(sessionCookie, true);
-    if (!decodedClaims?.uid) return null;
-
-    const userRecord = await db.collection("users").doc(decodedClaims.uid).get();
-    return userRecord.exists ? { ...userRecord.data(), id: userRecord.id } : null;
-  } catch (error) {
-    // console.error("Session verification failed:", error); 
-    // ^ Silence this error because it happens normally when session expires
-    return null;
-  }
-}
-
-// --- 6. CHECK AUTH STATUS (Missing Helper) ---
-export async function isAuthenticated() {
-  const user = await getCurrentUser();
-  return !!user; // Returns true if user exists, false otherwise
-}
-

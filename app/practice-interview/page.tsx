@@ -9,12 +9,11 @@ import {
   Square,
   Download,
   Loader2,
-  Cpu,
-  Briefcase,
   AlertCircle
 } from "lucide-react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+
+// IMPORT THE NEW PDF GENERATOR
+import { generatePDF } from "@/lib/generatePDF";
 
 // --- Types ---
 type InterviewState = "upload" | "analyzing" | "interview" | "feedback";
@@ -29,38 +28,25 @@ type QnA = {
   };
 };
 
-// --- Mock Question DB ---
-const MOCK_QUESTIONS = {
-  hr: [
-    "Tell me about yourself and your background.",
-    "Describe a conflict you faced at work and how you handled it.",
-    "Where do you see yourself in 5 years?"
-  ],
-  tech: [
-    "Explain the difference between a Process and a Thread.",
-    "How does the Event Loop work in JavaScript?",
-    "What are the ACID properties in databases?"
-  ]
-};
-
 export default function PracticeInterview() {
-  // State
-  const [difficulty, setDifficulty] = useState("Mid-Level"); // Default
+  // --- State ---
+  const [difficulty, setDifficulty] = useState("Mid-Level");
   const [questions, setQuestions] = useState<string[]>([]);
   const [step, setStep] = useState<InterviewState>("upload");
   const [file, setFile] = useState<File | null>(null);
   const [role, setRole] = useState("");
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  // Audio State
+  const [isRecording, setIsRecording] = useState(false);
+  const [transcript, setTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
   // Interview Logic
   const [qnaHistory, setQnaHistory] = useState<QnA[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [isRecording, setIsRecording] = useState(false);
-  const [transcript, setTranscript] = useState("");
-  const [isSpeaking, setIsSpeaking] = useState(false);
 
-  // Web Speech Refs
+  // Refs
   const recognitionRef = useRef<any>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
 
@@ -77,21 +63,22 @@ export default function PracticeInterview() {
         recognition.lang = "en-US";
 
         recognition.onresult = (event: any) => {
-          let interimTranscript = "";
+          let interim = "";
           for (let i = event.resultIndex; i < event.results.length; i++) {
             if (event.results[i].isFinal) {
               setTranscript((prev) => prev + event.results[i][0].transcript + " ");
             } else {
-              interimTranscript += event.results[i][0].transcript;
+              interim += event.results[i][0].transcript;
             }
           }
+          setInterimTranscript(interim);
         };
         recognitionRef.current = recognition;
       }
     }
   }, []);
 
-  // --- 2. Core Logic ---
+  // --- 2. Handlers ---
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) setFile(e.target.files[0]);
@@ -106,7 +93,6 @@ export default function PracticeInterview() {
       formData.append("action", "generate_questions");
       formData.append("file", file);
       formData.append("role", role);
-      // Add the difficulty level here
       formData.append("difficulty", difficulty);
 
       const res = await fetch("/api/ai-interview", {
@@ -116,8 +102,6 @@ export default function PracticeInterview() {
 
       const data = await res.json();
       if (!data.questions) {
-        // Log the actual error from backend
-        console.error("Backend Error Details:", data);
         throw new Error(data.details || data.error || "Failed to generate questions");
       }
 
@@ -133,12 +117,6 @@ export default function PracticeInterview() {
       alert("Error reading resume. Please try again.");
       setStep("upload");
     }
-  };
-
-  const askQuestion = (index: number) => {
-    //const questions = role.includes("Engineer") ? MOCK_QUESTIONS.tech : MOCK_QUESTIONS.hr;
-    const question = questions[index];
-    speak(question);
   };
 
   const speak = (text: string) => {
@@ -190,7 +168,7 @@ export default function PracticeInterview() {
       setStep("feedback");
     }
 
-    // 4. Background Analysis (WITH DEBUG ALERT)
+    // 4. Background Analysis
     (async () => {
       try {
         const formData = new FormData();
@@ -203,16 +181,14 @@ export default function PracticeInterview() {
           body: formData,
         });
 
-        // Check if server crashed
         if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Server Error (${response.status}): ${errorText}`);
+          throw new Error(`Server Error`);
         }
 
         const result = await response.json();
         const feedback = result.feedback;
 
-        // Update History
+        // Update History with AI Feedback
         setQnaHistory((prev) => {
           const newHistory = [...prev];
           if (newHistory[historyIndex]) {
@@ -222,17 +198,14 @@ export default function PracticeInterview() {
         });
 
       } catch (e: any) {
-        console.error("DEBUG ERROR:", e);
-        // THIS WILL TELL YOU EXACTLY WHAT IS WRONG:
-        alert(`AI Failed: ${e.message}`);
-
-        // Fallback
+        console.error("AI Error:", e);
+        // Fallback for UI if AI fails
         setQnaHistory((prev) => {
           const newHistory = [...prev];
           if (newHistory[historyIndex]) {
             newHistory[historyIndex] = {
               ...newHistory[historyIndex],
-              feedback: { grammarFix: "Error", betterAnswer: "Connection Failed", score: 0 }
+              feedback: { grammarFix: "Error connecting to AI", betterAnswer: "Could not generate feedback.", score: 0 }
             };
           }
           return newHistory;
@@ -240,54 +213,16 @@ export default function PracticeInterview() {
       }
     })();
   };
-  // --- 3. Mock Analysis Engine ---
-  const analyzeAnswer = (question: string, answer: string) => {
-    // This simulates AI logic. In real production, send 'answer' to GPT-4.
-    return {
-      grammarFix: answer.length < 10 ? "Answer too short to analyze." : `Corrected: "${answer.charAt(0).toUpperCase() + answer.slice(1)}." (Ensure proper sentence structure).`,
-      betterAnswer: "Use the STAR method: Situation, Task, Action, Result. Be more specific about your role.",
-      score: answer.length > 20 ? 85 : 40
-    };
-  };
 
-  // --- 4. PDF Generator ---
+  // --- 3. PDF Generator Function ---
   const downloadReport = () => {
-    const doc = new jsPDF();
+    // Calculate final score
+    const avgScore = qnaHistory.length > 0
+      ? Math.round(qnaHistory.reduce((acc, curr) => acc + (curr.feedback?.score || 0), 0) / qnaHistory.length)
+      : 0;
 
-    // Title
-    doc.setFontSize(20);
-    doc.setTextColor(79, 70, 229); // Indigo color
-    doc.text("Interview Performance Report", 14, 22);
-
-    doc.setFontSize(11);
-    doc.setTextColor(100);
-    doc.text(`Role: ${role} | Date: ${new Date().toLocaleDateString()}`, 14, 30);
-
-    // Stats
-    const avgScore = Math.round(qnaHistory.reduce((acc, curr) => acc + (curr.feedback?.score || 0), 0) / qnaHistory.length);
-    doc.text(`Overall Score: ${avgScore}/100`, 14, 38);
-
-    // Table Data Generation
-    const tableData = qnaHistory.map((item, index) => [
-      `Q${index + 1}: ${item.question}`,
-      `Your Answer: "${item.userAnswer}"\n\nGrammar Check: ${item.feedback?.grammarFix}\n\n💡 Improvement: ${item.feedback?.betterAnswer}`
-    ]);
-
-    // Generate Table
-    autoTable(doc, {
-      startY: 45,
-      head: [['Question', 'Analysis & Feedback']],
-      body: tableData,
-      theme: 'grid',
-      headStyles: { fillColor: [79, 70, 229] },
-      styles: { fontSize: 10, cellPadding: 6 },
-      columnStyles: {
-        0: { cellWidth: 60, fontStyle: 'bold' },
-        1: { cellWidth: 'auto' }
-      }
-    });
-
-    doc.save(`${role.replace(" ", "_")}_Report.pdf`);
+    // Call the utility function
+    generatePDF(role, qnaHistory, avgScore);
   };
 
   // --- RENDER ---
@@ -308,7 +243,7 @@ export default function PracticeInterview() {
           <div className="bg-[#111] border border-white/10 rounded-3xl p-8">
             <h2 className="text-xl font-semibold text-white mb-6">Setup Session</h2>
 
-            {/* 1. Resume Upload */}
+            {/* Resume Upload */}
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-400 mb-2">Upload Resume</label>
               <div className="border-2 border-dashed border-white/10 rounded-xl p-8 text-center hover:bg-white/5 cursor-pointer relative">
@@ -318,7 +253,7 @@ export default function PracticeInterview() {
               </div>
             </div>
 
-            {/* 2. Role Selector (Closed correctly) */}
+            {/* Role Selector */}
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-400 mb-2">Target Role</label>
               <select
@@ -334,7 +269,7 @@ export default function PracticeInterview() {
               </select>
             </div>
 
-            {/* 3. Difficulty Selector (Moved OUTSIDE the select) */}
+            {/* Difficulty Selector */}
             <div className="mb-8">
               <label className="block text-sm font-medium text-gray-400 mb-2">Difficulty</label>
               <div className="grid grid-cols-3 gap-2">
@@ -353,7 +288,7 @@ export default function PracticeInterview() {
               </div>
             </div>
 
-            {/* 4. Start Button */}
+            {/* Start Button */}
             <button
               onClick={startAnalysis}
               disabled={!file || !role}
@@ -379,7 +314,6 @@ export default function PracticeInterview() {
 
   // 3. Interview View
   if (step === "interview") {
-    //const questions = role.includes("Engineer") ? MOCK_QUESTIONS.tech : MOCK_QUESTIONS.hr;
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex flex-col p-4">
         <div className="flex-1 container mx-auto max-w-2xl flex flex-col justify-center">
@@ -391,8 +325,8 @@ export default function PracticeInterview() {
 
           {/* Answer Area */}
           <div className="bg-[#111] border border-white/10 rounded-2xl p-6 min-h-[200px] mb-8 relative">
-            {transcript ? (
-              <p className="text-white text-lg">{transcript}</p>
+            {transcript || interimTranscript ? (
+              <p className="text-white text-lg">{transcript} <span className="text-gray-500">{interimTranscript}</span></p>
             ) : (
               <p className="text-gray-600 italic">Listening... (Click mic to start)</p>
             )}
@@ -409,7 +343,7 @@ export default function PracticeInterview() {
             </button>
             <button
               onClick={submitAnswer}
-              disabled={!transcript}
+              disabled={!transcript && !interimTranscript}
               className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-8 py-4 rounded-full disabled:opacity-50"
             >
               Next Question
@@ -420,16 +354,13 @@ export default function PracticeInterview() {
     );
   }
 
-  // 4. Report View
-  // ... (inside your component)
-
-  // 4. Report View (Crash-Proof Version)
+  // 4. Report View (Feedback)
   if (step === "feedback") {
     const avgScore = qnaHistory.length > 0
       ? Math.round(qnaHistory.reduce((acc, curr) => acc + (curr.feedback?.score || 0), 0) / qnaHistory.length)
       : 0;
 
-    // Safety Helper
+    // Safety Helper for Text Rendering
     const renderSafeText = (text: any) => {
       if (!text) return "No feedback provided.";
       if (typeof text === "string") return text;
@@ -448,8 +379,12 @@ export default function PracticeInterview() {
               <h1 className="text-3xl font-bold text-white">Analysis Report</h1>
               <p className="text-gray-400">Role: {role}</p>
             </div>
-            {/* Only show download if you have the function, otherwise remove button */}
-            <button className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-xl font-bold transition-all">
+
+            {/* DOWNLOAD BUTTON */}
+            <button
+              onClick={downloadReport}
+              className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-xl font-bold transition-all"
+            >
               <Download className="h-5 w-5" /> Download PDF Report
             </button>
           </div>
@@ -475,24 +410,24 @@ export default function PracticeInterview() {
             {qnaHistory.map((item, idx) => (
               <div key={idx} className="bg-[#111] border border-white/10 rounded-2xl p-6">
 
-                {/* 1. Question Title */}
+                {/* Question Title */}
                 <h3 className="text-lg font-semibold text-white mb-2">Q{idx + 1}: {item.question}</h3>
 
-                {/* 2. User Answer (Always Visible) */}
+                {/* User Answer */}
                 <div className="mb-4 bg-black/50 p-4 rounded-xl border border-white/5">
                   <p className="text-sm text-gray-400 mb-1">Your Answer:</p>
                   <p className="text-gray-200">{item.userAnswer}</p>
                 </div>
 
-                {/* 3. LOGIC BRANCH: Loading vs. Results */}
+                {/* AI Feedback Section */}
                 {!item.feedback ? (
-                  // STATE A: Loading
+                  // Loading State
                   <div className="flex items-center gap-2 text-indigo-400 animate-pulse p-4 bg-indigo-500/10 rounded-xl border border-indigo-500/20">
                     <Loader2 className="h-4 w-4 animate-spin" />
                     <span>AI is grading this answer...</span>
                   </div>
                 ) : (
-                  // STATE B: Results (Grid)
+                  // Result State
                   <div className="grid md:grid-cols-2 gap-4">
                     {/* Grammar Box */}
                     <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl">

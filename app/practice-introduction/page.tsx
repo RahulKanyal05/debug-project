@@ -74,17 +74,30 @@ export default function PracticeIntroductionPage() {
             recognition.continuous = true;
             recognition.interimResults = true;
             recognition.lang = 'en-US';
+            recognition.maxAlternatives = 1;
 
             recognition.onresult = (event: any) => {
+                console.log('Speech result event:', event.results.length); // Debug log
+
                 let interim = '';
-                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                // Process ALL results, not just from resultIndex
+                for (let i = 0; i < event.results.length; ++i) {
+                    const transcript = event.results[i][0].transcript;
                     if (event.results[i].isFinal) {
-                        finalTranscriptRef.current += event.results[i][0].transcript.trim() + ' ';
+                        // Add final results to permanent transcript
+                        const newText = transcript.trim() + ' ';
+                        if (!finalTranscriptRef.current.includes(newText)) {
+                            finalTranscriptRef.current += newText;
+                            console.log('Added final transcript:', newText);
+                        }
                     } else {
-                        interim += event.results[i][0].transcript;
+                        // Collect interim results
+                        interim += transcript;
                     }
                 }
                 interimTranscriptRef.current = interim;
+                console.log('Current final:', finalTranscriptRef.current);
+                console.log('Current interim:', interim);
             };
 
             recognition.onerror = (event: any) => {
@@ -92,19 +105,28 @@ export default function PracticeIntroductionPage() {
                 if (event.error === 'not-allowed') {
                     toast.error("Microphone access denied.");
                 } else if (event.error === 'no-speech') {
-                    console.log('No speech detected');
+                    console.log('No speech detected - continuing');
+                    // Don't show error for no-speech, just log it
+                } else if (event.error === 'audio-capture') {
+                    toast.error("Microphone not working. Please check permissions.");
                 } else if (event.error !== 'aborted') {
-                    toast.error(`Speech recognition error: ${event.error}`);
+                    console.error(`Speech recognition error: ${event.error}`);
                 }
             };
 
+            recognition.onstart = () => {
+                console.log('Speech recognition started');
+            };
+
             recognition.onend = () => {
+                console.log('Speech recognition ended. Recording:', isRecording);
                 // Only restart if still recording
                 if (isRecording && isMountedRef.current) {
                     try {
+                        console.log('Restarting speech recognition...');
                         recognition.start();
                     } catch (e) {
-                        console.log('Recognition ended naturally');
+                        console.log('Could not restart recognition:', e);
                     }
                 }
             };
@@ -232,10 +254,10 @@ export default function PracticeIntroductionPage() {
                     const url = URL.createObjectURL(blob);
                     addVideoToList(url, blob, mimeType);
 
-                    // Wait for speech recognition to finalize
+                    // Wait longer for speech recognition to finalize (especially on mobile)
                     setTimeout(() => {
                         processAnalysis();
-                    }, 800);
+                    }, 1200); // Increased from 800ms
                 } else {
                     toast.error("No video data recorded.");
                 }
@@ -266,12 +288,7 @@ export default function PracticeIntroductionPage() {
 
     const handleStopRecording = () => {
         if (mediaRecorderRef.current && isRecording) {
-            try {
-                mediaRecorderRef.current.stop();
-            } catch (e) {
-                console.log("Recorder already stopped");
-            }
-
+            // Stop speech recognition FIRST to capture final transcript
             if (speechRecognitionRef.current) {
                 try {
                     speechRecognitionRef.current.stop();
@@ -280,9 +297,18 @@ export default function PracticeIntroductionPage() {
                 }
             }
 
-            setIsRecording(false);
-            stopCamera();
-            toast.success("Recording stopped!");
+            // Wait a moment for final speech results to process
+            setTimeout(() => {
+                try {
+                    mediaRecorderRef.current?.stop();
+                } catch (e) {
+                    console.log("Recorder already stopped");
+                }
+
+                setIsRecording(false);
+                stopCamera();
+                toast.success("Recording stopped!");
+            }, 300); // Give speech recognition time to finalize
         }
     };
 
@@ -317,14 +343,22 @@ export default function PracticeIntroductionPage() {
 
     // --- 5. Analysis Logic ---
     const processAnalysis = async () => {
+        // Give extra time for mobile browsers to finalize speech
+        await new Promise(resolve => setTimeout(resolve, 500));
+
         const transcript = (finalTranscriptRef.current + ' ' + interimTranscriptRef.current).trim();
 
-        console.log("Captured Transcript:", transcript);
+        console.log("=== TRANSCRIPT ANALYSIS ===");
+        console.log("Final transcript length:", finalTranscriptRef.current.length);
+        console.log("Interim transcript length:", interimTranscriptRef.current.length);
+        console.log("Combined transcript:", transcript);
+        console.log("==========================");
 
         if (transcript.length < 5) {
+            console.warn("Transcript too short! Final:", finalTranscriptRef.current, "Interim:", interimTranscriptRef.current);
             setReportData({
                 original: "(No clear speech detected)",
-                analysis: "We couldn't detect any clear speech. Please ensure your microphone is working and speak clearly during recording.",
+                analysis: "We couldn't detect any clear speech. Please ensure your microphone is working and speak clearly during recording. On mobile, make sure Chrome has microphone permissions enabled in Settings > Site Settings.",
                 grammar: "N/A",
                 revision: "N/A",
                 error: "No speech detected"
